@@ -53,6 +53,8 @@ internal sealed class CliParser
         ["fill-gaps"] = "include-inactive",
         ["verbose"] = "verbose",
         ["v"] = "verbose",
+        ["version"] = "version",
+        ["V"] = "version",
         ["help"] = "help",
         ["h"] = "help"
     };
@@ -63,6 +65,7 @@ internal sealed class CliParser
         "no-cache",
         "include-inactive",
         "verbose",
+        "version",
         "help"
     };
 
@@ -94,7 +97,7 @@ internal sealed class CliParser
     {
         if (args.Count == 0)
         {
-            return new CliParseResult(showHelp: true, null, null);
+            return new CliParseResult(showHelp: true, showVersion: false, options: null, error: null);
         }
 
         var normalized = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
@@ -107,7 +110,7 @@ internal sealed class CliParser
                 var (name, value, isHelp) = ExtractNameValue(raw);
                 if (isHelp)
                 {
-                    return new CliParseResult(showHelp: true, null, null);
+                    return new CliParseResult(showHelp: true, showVersion: false, options: null, error: null);
                 }
 
                 if (FlagOptions.Contains(name))
@@ -130,7 +133,7 @@ internal sealed class CliParser
 
             if (pendingOption is null)
             {
-                return new CliParseResult(false, null, $"Unexpected value '{raw}'. Prefix options with '-' or '--'.");
+                return new CliParseResult(false, false, null, $"Unexpected value '{raw}'. Prefix options with '-' or '--'.");
             }
 
             normalized[pendingOption] = raw;
@@ -139,30 +142,35 @@ internal sealed class CliParser
 
         if (pendingOption is not null)
         {
-            return new CliParseResult(false, null, $"Option '--{pendingOption}' requires a value.");
+            return new CliParseResult(false, false, null, $"Option '--{pendingOption}' requires a value.");
+        }
+
+        if (normalized.ContainsKey("version"))
+        {
+            return new CliParseResult(showHelp: false, showVersion: true, options: null, error: null);
         }
 
         if (!TryValidateMandatory(normalized, "instrument", out var instrumentValue, out var error))
         {
-            return new CliParseResult(false, null, error);
+            return new CliParseResult(false, false, null, error);
         }
 
         if (!TryValidateMandatory(normalized, "from", out var fromValue, out error) ||
             !TryValidateMandatory(normalized, "to", out var toValue, out error))
         {
-            return new CliParseResult(false, null, error);
+            return new CliParseResult(false, false, null, error);
         }
 
         if (!TryParseDate(fromValue!, out var fromUtc, out error) ||
             !TryParseDate(toValue!, out var toUtc, out error))
         {
-            return new CliParseResult(false, null, error);
+            return new CliParseResult(false, false, null, error);
         }
 
         var toExclusive = toUtc.AddDays(1);
         if (toExclusive <= fromUtc)
         {
-            return new CliParseResult(false, null, "'--to' must be after '--from'.");
+            return new CliParseResult(false, false, null, "'--to' must be after '--from'.");
         }
 
         var timeframe = DukascopyTimeframe.Tick;
@@ -170,7 +178,7 @@ internal sealed class CliParser
         {
             if (!TimeframeAliases.TryGetValue(timeframeValue.Trim(), out timeframe))
             {
-                return new CliParseResult(false, null, $"Timeframe '{timeframeValue}' is not supported.");
+                return new CliParseResult(false, false, null, $"Timeframe '{timeframeValue}' is not supported.");
             }
         }
 
@@ -198,7 +206,7 @@ internal sealed class CliParser
 
         if (!_generationFactory.TryCreate(timezoneValue, dateFormatValue, out var generationOptions, out error))
         {
-            return new CliParseResult(false, null, error);
+            return new CliParseResult(false, false, null, error);
         }
 
         var downloadOptions = new DownloadOptions(
@@ -219,7 +227,7 @@ internal sealed class CliParser
 
         var appOptions = new AppOptions(downloadOptions, generationOptions, normalized.ContainsKey("verbose"));
 
-        return new CliParseResult(false, appOptions, null);
+        return new CliParseResult(false, false, appOptions, null);
     }
 
     private static bool TryParseDate(string value, out DateTimeOffset utcDate, out string? error)

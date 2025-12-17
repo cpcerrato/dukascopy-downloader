@@ -5,7 +5,9 @@ internal static class UsagePrinter
     public static void Print()
     {
         var executable = AppDomain.CurrentDomain.FriendlyName;
+        var version = VersionInfo.GetVersion();
         Console.WriteLine();
+        Console.WriteLine($"{executable} v{version}");
         Console.WriteLine($"{executable} --instrument EURUSD --from 2025-01-14 --to 2025-01-18 [options]");
         Console.WriteLine();
         Console.WriteLine("Options:");
@@ -26,6 +28,7 @@ internal static class UsagePrinter
         Console.WriteLine("      --force                Ignore cache entries.");
         Console.WriteLine("      --no-cache             Disable cache reads (still writes).");
         Console.WriteLine("      --verbose              Verbose logging.");
+        Console.WriteLine("      --version              Show version information and exit.");
         Console.WriteLine("  -h, --help                 Show this help.");
         Console.WriteLine();
         Console.WriteLine("Note: '--to' is inclusive; downloads stop at the end of that UTC day.");

@@ -73,4 +73,16 @@ public class CliParserTests
         Assert.False(result.IsValid);
         Assert.Contains("'--to' must be after '--from'", result.Error, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Parse_WhenVersionRequested_SetsFlag()
+    {
+        var parser = CreateParser();
+
+        var result = parser.Parse(new[] { "--version" });
+
+        Assert.True(result.ShowVersion);
+        Assert.False(result.ShowHelp);
+        Assert.False(result.IsValid);
+    }
 }

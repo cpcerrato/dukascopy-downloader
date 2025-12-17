@@ -1,0 +1,28 @@
+name: Manual build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version label (e.g. 0.1.0). Defaults to project file value."
+        required: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Run tests
+        run: dotnet test tests/DukascopyDownloader.Tests/DukascopyDownloader.Tests.csproj
+      - name: Publish binaries
+        run: |
+          chmod +x scripts/publish-all.sh
+          VERSION="${{ inputs.version }}" ./scripts/publish-all.sh
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dukascopy-downloader-${{ inputs.version || 'manual' }}
+          path: artifacts/**

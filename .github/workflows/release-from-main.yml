@@ -1,0 +1,57 @@
+name: Release from main
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag (e.g. v0.2.0). Must match csproj <Version>."
+        required: true
+      prerelease:
+        type: boolean
+        description: "Mark release as prerelease"
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Verify project version
+        run: |
+          file_version=$(grep -m1 -oE '<Version>[^<]+' dukascopy-downloader.csproj | sed 's/<Version>//')
+          echo "Project version: $file_version"
+          if [ "$file_version" != "${{ inputs.version }}" ]; then
+            echo "Version mismatch: expected ${{ inputs.version }}"
+            exit 1
+          fi
+      - name: Run tests
+        run: dotnet test tests/DukascopyDownloader.Tests/DukascopyDownloader.Tests.csproj
+      - name: Build release artifacts
+        run: |
+          chmod +x scripts/publish-all.sh
+          VERSION="${{ inputs.version }}" ./scripts/publish-all.sh
+      - name: Tag commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ inputs.version }}"
+          git push origin "${{ inputs.version }}"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dukascopy-downloader-${{ inputs.version }}
+          path: artifacts/**
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          prerelease: ${{ inputs.prerelease }}
+          files: artifacts/*

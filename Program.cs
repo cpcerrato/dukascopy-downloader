@@ -19,6 +19,12 @@ internal static class Program
             return 0;
         }
 
+        if (parseResult.ShowVersion)
+        {
+            Console.WriteLine($"dukascopy-downloader {VersionInfo.GetVersion()}");
+            return 0;
+        }
+
         if (!parseResult.IsValid)
         {
             logger.Error(parseResult.Error ?? "Invalid arguments.");

@@ -1,27 +1,68 @@
 # Dukascopy Downloader
 
-High performance .NET console app for downloading Dukascopy BI5 feeds, caching them safely, and exporting validated CSV datasets across multiple timeframes.
+Cache-first Dukascopy BI5 downloader inspired by [dukascopy-node](https://github.com/Leo4815162342/dukascopy-node), with an emphasis on robust verification (never persisting corrupt BI5 files), higher throughput, and ready-to-use CSV exports across multiple timeframes.
+
+**Highlights**
+
+- Verifies every BI5 download via LZMA decode before it ever hits the cache/output mirror.
+- Structured cache layout (`.dukascopy-downloader-cache/{instrument}/{year}/{tick|m1}`) that avoids churn and keeps subsequent runs fast.
+- CSV generation that aggregates ticks/minutes into any Dukascopy timeframe and supports timezone/date-format overrides.
+- Optional gap filling (`--include-inactive`) to synthesize flat candles during market closures.
+- Clean logging, cancellation handling, and a suite of unit/integration/end-to-end tests.
 
 ---
 
-## Features
+## Installation
 
-- CLI-compatible parameter set covering instruments, date ranges, timeframes (`tick`, `s1`, `m1`, `m5`, `m15`, `m30`, `h1`, `h4`, `d1`, `mn1`).
-- Cache-first download strategy: verified BI5 files are never re-downloaded unless `--force` is provided.
-- Structured cache layout (`.dukascopy-downloader-cache/{Instrument}/{Year}/{tick|m1}`) to avoid unwieldy directories.
-- Intelligent rate-limit handling with configurable pauses and retry caps.
-- CSV generation module that:
-  - Aggregates ticks to `s1`, `m1`, `m5`, … `mn1`.
-  - Applies custom timezone and timestamp formatting at export time.
-- Optional flat-bar gap filling (`--include-inactive`) to keep candles contiguous across market closures.
-- Verbose logging, graceful cancellation, and clean separation between CLI, download, generation, and logging layers.
+### macOS / Linux (curl installer)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lastko/dukascopy-downloader/main/scripts/install.sh | sudo bash
+```
+
+Set `INSTALL_DIR` (default: `/usr/local/bin`) or `VERSION=v1.2.3` before running to install a specific release. The script detects your OS/architecture, downloads the right archive from the latest GitHub release, and places `dukascopy-downloader` on your PATH.
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/lastko/dukascopy-downloader/main/scripts/install.ps1 | iex
+```
+
+Optional parameters: `-Version v1.2.3` and `-InstallDir "C:\Tools"`. The script fetches the zip from the latest GitHub release and copies `dukascopy-downloader.exe` to the chosen directory.
+
+### Prebuilt archives
+
+Each GitHub release publishes ready-to-run archives:
+
+| Platform | Asset |
+| --- | --- |
+| macOS ARM | `dukascopy-downloader-<version>-osx-arm64.tar.gz` |
+| Linux x64 | `dukascopy-downloader-<version>-linux-x64.tar.gz` |
+| Linux ARM64 | `dukascopy-downloader-<version>-linux-arm64.tar.gz` |
+| Windows x64 | `dukascopy-downloader-<version>-win-x64.zip` |
+
+Download, extract, and place the binary anywhere on your PATH.
+
+### Building your own binaries
+
+Create single-file, self-contained builds for every target runtime:
+
+```bash
+./scripts/publish-all.sh          # outputs archives to ./artifacts
+```
+
+Customize runtimes via `RIDS="linux-x64 osx-arm64" ./scripts/publish-all.sh`. Set `VERSION=0.1.1 ./scripts/publish-all.sh` to override the artifact version label. The script packages each binary together with `README.md` and `LICENSE`.
+
+### Triggering manual builds
+
+Run the **Manual build** workflow (GitHub Actions) to execute tests and generate artifacts without tagging a release. Supply the desired version in the workflow input to mirror the archive names.
 
 ---
 
 ## Usage
 
 ```bash
-dotnet run -- \
+dukascopy-downloader \
   --instrument EURUSD \
   --from 2025-01-14 \
   --to 2025-01-18 \
@@ -39,6 +80,30 @@ dotnet run -- \
   --verbose
 ```
 
+## Options
+
+| Option | Description |
+| --- | --- |
+| `-i, --instrument` | Symbol to download (e.g. `EURUSD`). |
+| `-f, --from` | Inclusive UTC start date (`YYYY-MM-DD`). |
+| `-t, --to` | Inclusive UTC end date (`YYYY-MM-DD`). |
+| `--timeframe` | `tick`, `s1`, `m1`, `m5`, `m15`, `m30`, `h1`, `h4`, `d1`, `mn1` (default `tick`). |
+| `--cache-root` | Cache directory (default: `./.dukascopy-downloader-cache`). |
+| `-o, --output` | Optional mirror folder for verified BI5 files. |
+| `--timezone` | Output timezone for CSV timestamps. |
+| `--date-format` | Custom timestamp format (e.g. `yyyy-MM-dd HH:mm:ss`). |
+| `-c, --concurrency` | Parallel downloads (default: CPU cores − 1). |
+| `--max-retries` | Retry attempts per file (default 4). |
+| `--retry-delay` | Delay between retries (default `5s`). |
+| `--rate-limit-pause` | Sleep duration after HTTP 429 (default `30s`). |
+| `--rate-limit-retries` | Allowed rate-limit retries before failing (default 5). |
+| `--force` | Ignore cache hits (forces re-download). |
+| `--no-cache` | Do not read from cache (still writes). |
+| `--include-inactive` | Fill closed-market periods with flat, zero-volume candles. |
+| `--verbose` | Verbose logging. |
+| `--version` | Print CLI version and exit. |
+| `-h, --help` | Show help. |
+
 ### Notes
 
 - `--from` / `--to` use **inclusive** UTC calendar dates (format `YYYY-MM-DD`). Internally, downloads run until the end of the `--to` day.
@@ -47,6 +112,7 @@ dotnet run -- \
 - Timezone/date-format options affect only the CSV timestamps; the downloader always uses UTC for fetching.
 - On rate-limit responses (`HTTP 429`), all downloads pause for the configured window before retrying.
 - Dukascopy sometimes serves **0-byte BI5 files** on inactive sessions (weekends, holidays). These are treated as valid “no activity” slices; combine with `--include-inactive` to synthesize flat, zero-volume candles spanning the gap using the last traded price.
+- Use `--version` to print the CLI version and exit immediately.
 
 ---
 
@@ -77,6 +143,12 @@ dotnet test tests/DukascopyDownloader.Tests/DukascopyDownloader.Tests.csproj
 ```
 
 > ⚠️ The built-in vstest runner requires socket permissions for inter-process communication. If the test command fails with `SocketException (Permission denied)`, rerun from an environment where TCP listeners are allowed (or use `dotnet test -- --port <allowed-port>` when running under constrained sandboxes).
+
+### Release workflow
+
+- Update `<Version>` in `dukascopy-downloader.csproj`.
+- Run `./scripts/publish-all.sh` locally for a smoke check.
+- Trigger the **Manual build** workflow for CI artifacts, or use **Release from main** (workflow_dispatch) with the desired version to tag the current commit, publish artifacts, and create a GitHub release automatically.
 
 ### Adding Tests
 
