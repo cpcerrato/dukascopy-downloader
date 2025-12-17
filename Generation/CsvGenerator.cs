@@ -1,0 +1,202 @@
+using System.Collections.Concurrent;
+using System.Globalization;
+using System.Linq;
+using System.Text;
+using DukascopyDownloader.Download;
+using DukascopyDownloader.Logging;
+
+namespace DukascopyDownloader.Generation;
+
+internal sealed class CsvGenerator
+{
+    private readonly ConsoleLogger _logger;
+
+    public CsvGenerator(ConsoleLogger logger)
+    {
+        _logger = logger;
+    }
+
+    public async Task GenerateAsync(DownloadOptions download, GenerationOptions generation, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (download.Timeframe == DukascopyTimeframe.Tick || download.Timeframe == DukascopyTimeframe.Second1)
+        {
+            var ticks = await LoadTicksAsync(download, cancellationToken);
+            if (ticks.Count == 0)
+            {
+                _logger.Warn("No tick data available for the requested range; skipping CSV export.");
+                return;
+            }
+
+            if (download.Timeframe == DukascopyTimeframe.Tick)
+            {
+                await WriteTickCsvAsync(ticks, download, generation, cancellationToken);
+            }
+            else
+            {
+                var candles = CandleAggregator.AggregateSeconds(ticks, generation.TimeZone);
+                candles = CandleSeriesFiller.IncludeInactivePeriods(candles, download, generation.TimeZone);
+                await WriteCandleCsvAsync(candles, download, generation, cancellationToken);
+            }
+
+            return;
+        }
+
+        var minutes = await LoadMinutesAsync(download, cancellationToken);
+        if (minutes.Count == 0)
+        {
+            _logger.Warn("No minute data available for the requested range; skipping CSV export.");
+            return;
+        }
+
+        var aggregated = CandleAggregator.AggregateMinutes(minutes, download.Timeframe, generation.TimeZone);
+        aggregated = CandleSeriesFiller.IncludeInactivePeriods(aggregated, download, generation.TimeZone);
+        await WriteCandleCsvAsync(aggregated, download, generation, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<TickRecord>> LoadTicksAsync(DownloadOptions download, CancellationToken cancellationToken)
+    {
+        var cacheManager = new CacheManager(download.CacheRoot, null);
+        var slices = DownloadSlicePlanner.Build(download)
+            .Where(s => s.FeedKind == DukascopyFeedKind.Tick)
+            .ToList();
+
+        var results = new ConcurrentBag<TickRecord>();
+
+        await Parallel.ForEachAsync(slices, cancellationToken, (slice, ct) =>
+        {
+            var path = cacheManager.ResolveCachePath(slice);
+            if (!File.Exists(path))
+            {
+                _logger.Warn($"Tick slice missing on disk: {path}");
+                return ValueTask.CompletedTask;
+            }
+
+            IReadOnlyList<TickRecord> ticks;
+            try
+            {
+                ticks = Bi5Decoder.ReadTicks(path, slice.Start);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn($"Failed to decode tick file {path}: {ex.Message}");
+                return ValueTask.CompletedTask;
+            }
+
+            foreach (var tick in ticks)
+            {
+                if (tick.TimestampUtc >= download.FromUtc && tick.TimestampUtc < download.ToUtc)
+                {
+                    results.Add(tick);
+                }
+            }
+
+            return ValueTask.CompletedTask;
+        });
+
+        return results.OrderBy(t => t.TimestampUtc).ToList();
+    }
+
+    private async Task<IReadOnlyList<MinuteRecord>> LoadMinutesAsync(DownloadOptions download, CancellationToken cancellationToken)
+    {
+        var cacheManager = new CacheManager(download.CacheRoot, null);
+        var slices = DownloadSlicePlanner.Build(download)
+            .Where(s => s.FeedKind == DukascopyFeedKind.Minute)
+            .ToList();
+
+        var results = new ConcurrentBag<MinuteRecord>();
+
+        await Parallel.ForEachAsync(slices, cancellationToken, (slice, ct) =>
+        {
+            var path = cacheManager.ResolveCachePath(slice);
+            if (!File.Exists(path))
+            {
+                _logger.Warn($"Minute slice missing on disk: {path}");
+                return ValueTask.CompletedTask;
+            }
+
+            IReadOnlyList<MinuteRecord> minutes;
+            try
+            {
+                minutes = Bi5Decoder.ReadMinutes(path, slice.Start);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn($"Failed to decode minute file {path}: {ex.Message}");
+                return ValueTask.CompletedTask;
+            }
+
+            foreach (var candle in minutes)
+            {
+                if (candle.TimestampUtc >= download.FromUtc && candle.TimestampUtc < download.ToUtc)
+                {
+                    results.Add(candle);
+                }
+            }
+
+            return ValueTask.CompletedTask;
+        });
+
+        return results.OrderBy(c => c.TimestampUtc).ToList();
+    }
+
+    private async Task WriteTickCsvAsync(IReadOnlyList<TickRecord> ticks, DownloadOptions download, GenerationOptions generation, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var sb = new StringBuilder();
+        sb.AppendLine("timestamp,ask,bid,askVolume,bidVolume");
+
+        foreach (var tick in ticks)
+        {
+            var local = TimeZoneInfo.ConvertTime(tick.TimestampUtc, generation.TimeZone);
+            sb.AppendLine(string.Join(",",
+                FormatTimestamp(local, generation),
+                tick.Ask.ToString(CultureInfo.InvariantCulture),
+                tick.Bid.ToString(CultureInfo.InvariantCulture),
+                tick.AskVolume.ToString(CultureInfo.InvariantCulture),
+                tick.BidVolume.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        await PersistCsvAsync(sb.ToString(), download, generation, cancellationToken);
+    }
+
+    private async Task WriteCandleCsvAsync(IReadOnlyList<CandleRecord> candles, DownloadOptions download, GenerationOptions generation, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var sb = new StringBuilder();
+        sb.AppendLine("timestamp,open,high,low,close,volume");
+
+        foreach (var candle in candles)
+        {
+            sb.AppendLine(string.Join(",",
+                FormatTimestamp(candle.LocalStart, generation),
+                candle.Open.ToString(CultureInfo.InvariantCulture),
+                candle.High.ToString(CultureInfo.InvariantCulture),
+                candle.Low.ToString(CultureInfo.InvariantCulture),
+                candle.Close.ToString(CultureInfo.InvariantCulture),
+                candle.Volume.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        await PersistCsvAsync(sb.ToString(), download, generation, cancellationToken);
+    }
+
+    private async Task PersistCsvAsync(string content, DownloadOptions download, GenerationOptions generation, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var exportsFolder = Path.Combine(download.CacheRoot, "exports");
+        Directory.CreateDirectory(exportsFolder);
+        var actualEnd = download.ToUtc.AddDays(-1);
+        var fileName = $"{download.Instrument}_{download.Timeframe.ToDisplayString()}_{download.FromUtc:yyyyMMdd}_{actualEnd:yyyyMMdd}.csv";
+        var path = Path.Combine(exportsFolder, fileName);
+        await File.WriteAllTextAsync(path, content, Encoding.UTF8, cancellationToken);
+        _logger.Success($"CSV written to {path}");
+    }
+
+    private static string FormatTimestamp(DateTimeOffset localTime, GenerationOptions options)
+    {
+        var format = string.IsNullOrWhiteSpace(options.DateFormat) ? "yyyy-MM-dd HH:mm:ss" : options.DateFormat!;
+        return localTime.ToString(format, CultureInfo.InvariantCulture);
+    }
+
+}

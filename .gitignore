@@ -1,0 +1,75 @@
+# ===== .NET / C# (Console CLI) =====
+
+## Build outputs
+bin/
+obj/
+[Bb]uild/
+[Bb]uild[Ll]og.*
+
+## Visual Studio / VS Code / Rider
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## Rider
+*.DotSettings.user
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.assets.json
+paket-files/
+
+## Test results
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+## Logs
+*.log
+
+## OS files
+.DS_Store
+Thumbs.db
+
+## Secrets / local config
+appsettings.Development.json
+appsettings.Local.json
+*.secrets.json
+secrets.json
+
+## Publish / artifacts
+publish/
+artifacts/
+
+## Dotnet tool restore
+.dotnet/
+
+## BenchmarkDotNet
+BenchmarkDotNet.Artifacts/
+
+## ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.ReSharper.user
+
+## Cache / temp (project-specific)
+.dukascopy-cache/
+dukascopy-cache/
+cache/
+tmp/
+temp/
+
+## Data outputs (optional; remove if you want to commit outputs)
+*.csv
+*.parquet
+*.bi5
+*.empty

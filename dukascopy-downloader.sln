@@ -1,0 +1,35 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dukascopy-downloader", "dukascopy-downloader.csproj", "{9E9DA1F9-FCFB-A89E-0C50-146D86D8BCF8}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DukascopyDownloader.Tests", "tests\DukascopyDownloader.Tests\DukascopyDownloader.Tests.csproj", "{D11151DF-BEBA-31C5-74C7-C148F21A801A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9E9DA1F9-FCFB-A89E-0C50-146D86D8BCF8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9E9DA1F9-FCFB-A89E-0C50-146D86D8BCF8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9E9DA1F9-FCFB-A89E-0C50-146D86D8BCF8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9E9DA1F9-FCFB-A89E-0C50-146D86D8BCF8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D11151DF-BEBA-31C5-74C7-C148F21A801A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D11151DF-BEBA-31C5-74C7-C148F21A801A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D11151DF-BEBA-31C5-74C7-C148F21A801A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D11151DF-BEBA-31C5-74C7-C148F21A801A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{D11151DF-BEBA-31C5-74C7-C148F21A801A} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {489C60C2-724F-4C2C-AB37-2779F313A5C2}
+	EndGlobalSection
+EndGlobal
