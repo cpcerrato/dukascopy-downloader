@@ -82,6 +82,8 @@ dukascopy-downloader \
 
 ## Options
 
+**Download options**
+
 | Option | Description |
 | --- | --- |
 | `-i, --instrument` | Symbol to download (e.g. `EURUSD`). |
@@ -90,8 +92,6 @@ dukascopy-downloader \
 | `--timeframe` | `tick`, `s1`, `m1`, `m5`, `m15`, `m30`, `h1`, `h4`, `d1`, `mn1` (default `tick`). |
 | `--cache-root` | Cache directory (default: `./.dukascopy-downloader-cache`). |
 | `-o, --output` | Optional mirror folder for verified BI5 files. |
-| `--timezone` | Output timezone for CSV timestamps. |
-| `--date-format` | Custom timestamp format (e.g. `yyyy-MM-dd HH:mm:ss`). |
 | `-c, --concurrency` | Parallel downloads (default: CPU cores − 1). |
 | `--max-retries` | Retry attempts per file (default 4). |
 | `--retry-delay` | Delay between retries (default `5s`). |
@@ -99,7 +99,19 @@ dukascopy-downloader \
 | `--rate-limit-retries` | Allowed rate-limit retries before failing (default 5). |
 | `--force` | Ignore cache hits (forces re-download). |
 | `--no-cache` | Do not read from cache (still writes). |
+
+**Generation options**
+
+| Option | Description |
+| --- | --- |
+| `--timezone` | Output timezone for CSV timestamps. |
+| `--date-format` | Custom timestamp format (e.g. `yyyy-MM-dd HH:mm:ss`). |
 | `--include-inactive` | Fill closed-market periods with flat, zero-volume candles. |
+
+**General**
+
+| Option | Description |
+| --- | --- |
 | `--verbose` | Verbose logging. |
 | `--version` | Print CLI version and exit. |
 | `-h, --help` | Show help. |
