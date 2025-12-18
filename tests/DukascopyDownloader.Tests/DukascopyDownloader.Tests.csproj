@@ -5,8 +5,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <RestoreSources>$(HOME)/.nuget/packages</RestoreSources>
-    <RestoreFallbackFolders></RestoreFallbackFolders>
   </PropertyGroup>
 
   <ItemGroup>
