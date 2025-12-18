@@ -1,3 +1,5 @@
+using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -13,6 +15,9 @@ internal sealed class DownloadOrchestrator
     private readonly ConsoleLogger _logger;
     private readonly HttpClient _httpClient;
     private readonly RateLimitGate _rateLimitGate = new();
+    private long _lastProgressTick;
+    private int _spinnerIndex;
+    private readonly char[] _spinner = new[] { '|', '/', '-', '\\' };
 
     internal sealed record DownloadJob(DownloadSlice Slice, int Attempts, int RateLimitHits);
 
@@ -40,13 +45,14 @@ internal sealed class DownloadOrchestrator
         _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("dukascopy-downloader", "1.0"));
     }
 
-    public async Task ExecuteAsync(DownloadOptions options, CancellationToken cancellationToken)
+    public async Task<DownloadSummary> ExecuteAsync(DownloadOptions options, CancellationToken cancellationToken)
     {
+        var sw = Stopwatch.StartNew();
         var slices = DownloadSlicePlanner.Build(options).ToList();
         if (slices.Count == 0)
         {
             _logger.Info("No downloads were scheduled. Check the requested date range.");
-            return;
+            return new DownloadSummary(0, 0, 0, 0, 0, TimeSpan.Zero);
         }
 
         Directory.CreateDirectory(options.CacheRoot);
@@ -60,6 +66,8 @@ internal sealed class DownloadOrchestrator
         var cacheManager = new CacheManager(options.CacheRoot, options.OutputDirectory);
         var progress = new DownloadProgress();
         using var failureManifest = new FailureManifest(options.CacheRoot);
+        RenderProgress(slices.Count, progress, force: true);
+        RenderProgress(slices.Count, progress);
 
         var channel = Channel.CreateUnbounded<DownloadJob>(new UnboundedChannelOptions
         {
@@ -86,6 +94,7 @@ internal sealed class DownloadOrchestrator
             .Select(_ => RunWorkerAsync(
                 channel.Reader,
                 channel.Writer,
+                slices.Count,
                 options,
                 cacheManager,
                 progress,
@@ -96,17 +105,29 @@ internal sealed class DownloadOrchestrator
 
         await Task.WhenAll(workers);
 
+        RenderProgress(slices.Count, progress, force: true);
+        _logger.CompleteProgressLine();
         _logger.Success($"Downloads completed. New: {progress.SuccessCount}, Cache hits: {progress.CacheHits}, Missing: {progress.SkippedMissing}, Failed: {progress.Failures}.");
 
         if (progress.Failures > 0)
         {
             throw new DownloadException("Some files failed to download. See logs above for details.");
         }
+
+        sw.Stop();
+        return new DownloadSummary(
+            Total: slices.Count,
+            NewFiles: progress.SuccessCount,
+            CacheHits: progress.CacheHits,
+            Missing: progress.SkippedMissing,
+            Failed: progress.Failures,
+            Duration: sw.Elapsed);
     }
 
     private async Task RunWorkerAsync(
         ChannelReader<DownloadJob> reader,
         ChannelWriter<DownloadJob> writer,
+        int totalJobs,
         DownloadOptions options,
         CacheManager cacheManager,
         DownloadProgress progress,
@@ -125,6 +146,7 @@ internal sealed class DownloadOrchestrator
                 {
                     case JobDecisionKind.Completed:
                         markJobCompleted();
+                        RenderProgress(totalJobs, progress);
                         break;
                     case JobDecisionKind.Requeue:
                         ScheduleRetry(decision.Job!, decision.Delay, writer, cancellationToken);
@@ -138,6 +160,23 @@ internal sealed class DownloadOrchestrator
         }
     }
 
+    private void RenderProgress(int totalJobs, DownloadProgress progress, bool force = false)
+    {
+        var completed = progress.SuccessCount + progress.CacheHits + progress.SkippedMissing + progress.Failures;
+        var percent = totalJobs == 0 ? 100 : (int)Math.Round((double)completed * 100 / totalJobs);
+        var now = Stopwatch.GetTimestamp();
+        var elapsedMs = now * 1000 / Stopwatch.Frequency;
+        if (!force && elapsedMs - _lastProgressTick < 200)
+        {
+            return;
+        }
+
+        _lastProgressTick = elapsedMs;
+        var spinner = _spinner[_spinnerIndex++ % _spinner.Length];
+        var message =
+            $"Downloads {spinner} {percent,3}% ({completed}/{totalJobs}) | New {progress.SuccessCount} | Cache {progress.CacheHits} | Missing {progress.SkippedMissing} | Failed {progress.Failures}";
+        _logger.Progress(message);
+    }
     internal async Task<JobDecision> ProcessJobAsync(
         DownloadJob job,
         DownloadOptions options,
@@ -212,7 +251,6 @@ internal sealed class DownloadOrchestrator
             await cacheManager.SyncToOutputAsync(destination, slice, cancellationToken);
 
             progress.IncrementSuccess();
-            _logger.Info($"OK {summary}");
             return JobDecision.Completed();
         }
         catch (OperationCanceledException)

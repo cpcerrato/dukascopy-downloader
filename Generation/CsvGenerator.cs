@@ -20,7 +20,13 @@ internal sealed class CsvGenerator
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (download.Timeframe == DukascopyTimeframe.Tick || download.Timeframe == DukascopyTimeframe.Second1)
+        if (download.Timeframe == DukascopyTimeframe.Tick)
+        {
+            await WriteTickCsvAsync(download, generation, cancellationToken);
+            return;
+        }
+
+        if (download.Timeframe == DukascopyTimeframe.Second1)
         {
             var ticks = await LoadTicksAsync(download, cancellationToken);
             if (ticks.Count == 0)
@@ -29,17 +35,9 @@ internal sealed class CsvGenerator
                 return;
             }
 
-            if (download.Timeframe == DukascopyTimeframe.Tick)
-            {
-                await WriteTickCsvAsync(ticks, download, generation, cancellationToken);
-            }
-            else
-            {
-                var candles = CandleAggregator.AggregateSeconds(ticks, generation.TimeZone);
-                candles = CandleSeriesFiller.IncludeInactivePeriods(candles, download, generation.TimeZone);
-                await WriteCandleCsvAsync(candles, download, generation, cancellationToken);
-            }
-
+            var candles = CandleAggregator.AggregateSeconds(ticks, generation.TimeZone);
+            candles = CandleSeriesFiller.IncludeInactivePeriods(candles, download, generation.TimeZone);
+            await WriteCandleCsvAsync(candles, download, generation, cancellationToken);
             return;
         }
 
@@ -141,60 +139,148 @@ internal sealed class CsvGenerator
         return results.OrderBy(c => c.TimestampUtc).ToList();
     }
 
-    private async Task WriteTickCsvAsync(IReadOnlyList<TickRecord> ticks, DownloadOptions download, GenerationOptions generation, CancellationToken cancellationToken)
+    private async Task WriteTickCsvAsync(DownloadOptions download, GenerationOptions generation, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var sb = new StringBuilder();
-        sb.AppendLine("timestamp,ask,bid,askVolume,bidVolume");
 
-        foreach (var tick in ticks)
+        var cacheManager = new CacheManager(download.CacheRoot, null);
+        var slices = DownloadSlicePlanner.Build(download)
+            .Where(s => s.FeedKind == DukascopyFeedKind.Tick)
+            .OrderBy(s => s.Start)
+            .ToList();
+
+        if (slices.Count == 0)
         {
-            var local = TimeZoneInfo.ConvertTime(tick.TimestampUtc, generation.TimeZone);
-            sb.AppendLine(string.Join(",",
-                FormatTimestamp(local, generation),
-                tick.Ask.ToString(CultureInfo.InvariantCulture),
-                tick.Bid.ToString(CultureInfo.InvariantCulture),
-                tick.AskVolume.ToString(CultureInfo.InvariantCulture),
-                tick.BidVolume.ToString(CultureInfo.InvariantCulture)));
+            _logger.Warn("No tick data available for the requested range; skipping CSV export.");
+            return;
         }
 
-        await PersistCsvAsync(sb.ToString(), download, generation, cancellationToken);
+        var exportPath = ResolveExportPath(download);
+        var rowsWritten = 0;
+
+        {
+            await using var stream = new FileStream(exportPath, FileMode.Create, FileAccess.Write, FileShare.Read, bufferSize: 64 * 1024, useAsync: true);
+            await using var writer = new StreamWriter(stream, Encoding.UTF8);
+
+            await writer.WriteLineAsync("timestamp,ask,bid,askVolume,bidVolume");
+
+            foreach (var slice in slices)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var path = cacheManager.ResolveCachePath(slice);
+                if (!File.Exists(path))
+                {
+                    _logger.Warn($"Tick slice missing on disk: {path}");
+                    continue;
+                }
+
+                IReadOnlyList<TickRecord> ticks;
+                try
+                {
+                    ticks = Bi5Decoder.ReadTicks(path, slice.Start);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warn($"Failed to decode tick file {path}: {ex.Message}");
+                    continue;
+                }
+
+                foreach (var tick in ticks)
+                {
+                    if (tick.TimestampUtc < download.FromUtc || tick.TimestampUtc >= download.ToUtc)
+                    {
+                        continue;
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var local = TimeZoneInfo.ConvertTime(tick.TimestampUtc, generation.TimeZone);
+                    var line = string.Join(",",
+                        FormatTimestamp(local, generation),
+                        tick.Ask.ToString(CultureInfo.InvariantCulture),
+                        tick.Bid.ToString(CultureInfo.InvariantCulture),
+                        tick.AskVolume.ToString(CultureInfo.InvariantCulture),
+                        tick.BidVolume.ToString(CultureInfo.InvariantCulture));
+
+                    await writer.WriteLineAsync(line);
+                    rowsWritten++;
+                }
+            }
+        }
+
+        if (rowsWritten == 0)
+        {
+            if (File.Exists(exportPath))
+            {
+                File.Delete(exportPath);
+            }
+
+            _logger.Warn("No tick data available for the requested range; skipping CSV export.");
+            return;
+        }
+
+        _logger.Success($"CSV written to {exportPath}");
     }
 
     private async Task WriteCandleCsvAsync(IReadOnlyList<CandleRecord> candles, DownloadOptions download, GenerationOptions generation, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var sb = new StringBuilder();
-        sb.AppendLine("timestamp,open,high,low,close,volume");
+        var path = ResolveExportPath(download);
+        var rowsWritten = 0;
+
+        await using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read, bufferSize: 64 * 1024, useAsync: true);
+        await using var writer = new StreamWriter(stream, Encoding.UTF8);
+
+        await writer.WriteLineAsync("timestamp,open,high,low,close,volume");
 
         foreach (var candle in candles)
         {
-            sb.AppendLine(string.Join(",",
+            var line = string.Join(",",
                 FormatTimestamp(candle.LocalStart, generation),
                 candle.Open.ToString(CultureInfo.InvariantCulture),
                 candle.High.ToString(CultureInfo.InvariantCulture),
                 candle.Low.ToString(CultureInfo.InvariantCulture),
                 candle.Close.ToString(CultureInfo.InvariantCulture),
-                candle.Volume.ToString(CultureInfo.InvariantCulture)));
+                candle.Volume.ToString(CultureInfo.InvariantCulture));
+
+            await writer.WriteLineAsync(line);
+            rowsWritten++;
         }
 
-        await PersistCsvAsync(sb.ToString(), download, generation, cancellationToken);
+        if (rowsWritten == 0)
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+
+            _logger.Warn("No candle data available for the requested range; skipping CSV export.");
+            return;
+        }
+
+        _logger.Success($"CSV written to {path}");
     }
 
-    private async Task PersistCsvAsync(string content, DownloadOptions download, GenerationOptions generation, CancellationToken cancellationToken)
+    private string ResolveExportPath(DownloadOptions download)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        var exportsFolder = Path.Combine(download.CacheRoot, "exports");
+        var exportsFolder = string.IsNullOrWhiteSpace(download.OutputDirectory)
+            ? Environment.CurrentDirectory
+            : download.OutputDirectory!;
         Directory.CreateDirectory(exportsFolder);
         var actualEnd = download.ToUtc.AddDays(-1);
         var fileName = $"{download.Instrument}_{download.Timeframe.ToDisplayString()}_{download.FromUtc:yyyyMMdd}_{actualEnd:yyyyMMdd}.csv";
-        var path = Path.Combine(exportsFolder, fileName);
-        await File.WriteAllTextAsync(path, content, Encoding.UTF8, cancellationToken);
-        _logger.Success($"CSV written to {path}");
+        return Path.Combine(exportsFolder, fileName);
     }
 
     private static string FormatTimestamp(DateTimeOffset localTime, GenerationOptions options)
     {
+        if (!options.HasCustomSettings)
+        {
+            var utc = localTime.ToUniversalTime();
+            return utc.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        }
+
         var format = string.IsNullOrWhiteSpace(options.DateFormat) ? "yyyy-MM-dd HH:mm:ss" : options.DateFormat!;
         return localTime.ToString(format, CultureInfo.InvariantCulture);
     }

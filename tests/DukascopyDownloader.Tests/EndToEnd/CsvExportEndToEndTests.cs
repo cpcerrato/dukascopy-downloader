@@ -20,7 +20,8 @@ public sealed class CsvExportEndToEndTests : IDisposable
     {
         var start = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
         var endExclusive = start.AddDays(3); // 14,15,16
-        var download = CreateDownloadOptions(start, endExclusive, includeInactive: true);
+        var exportRoot = Path.Combine(_cacheRoot, "exports");
+        var download = CreateDownloadOptions(start, endExclusive, includeInactive: true, outputRoot: exportRoot);
 
         var cachePath = ResolveMinuteCachePath(start);
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
@@ -33,7 +34,7 @@ public sealed class CsvExportEndToEndTests : IDisposable
 
         await generator.GenerateAsync(download, generation, CancellationToken.None);
 
-        var exportPath = Path.Combine(_cacheRoot, "exports", "EURUSD_d1_20250114_20250116.csv");
+        var exportPath = Path.Combine(exportRoot, "EURUSD_d1_20250114_20250116.csv");
         Assert.True(File.Exists(exportPath));
 
         var rows = File.ReadAllLines(exportPath).Skip(1).ToList();
@@ -54,7 +55,7 @@ public sealed class CsvExportEndToEndTests : IDisposable
         Assert.Equal(first[4], third[4]);
     }
 
-    private DownloadOptions CreateDownloadOptions(DateTimeOffset fromUtc, DateTimeOffset toUtc, bool includeInactive)
+    private DownloadOptions CreateDownloadOptions(DateTimeOffset fromUtc, DateTimeOffset toUtc, bool includeInactive, string? outputRoot)
     {
         return new DownloadOptions(
             "EURUSD",
@@ -62,7 +63,7 @@ public sealed class CsvExportEndToEndTests : IDisposable
             toUtc,
             DukascopyTimeframe.Day1,
             _cacheRoot,
-            null,
+            outputRoot,
             UseCache: true,
             ForceRefresh: false,
             IncludeInactivePeriods: includeInactive,

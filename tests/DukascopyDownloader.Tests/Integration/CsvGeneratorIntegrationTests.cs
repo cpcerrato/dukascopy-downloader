@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -18,7 +19,8 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
     public async Task GenerateAsync_FromCachedMinuteFiles_WritesAggregatedCsv()
     {
         var dayStart = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
-        var download = CreateDownloadOptions(dayStart, dayStart.AddDays(1), includeInactive: false);
+        var exportRoot = Path.Combine(_cacheRoot, "exports");
+        var download = CreateDownloadOptions(dayStart, dayStart.AddDays(1), includeInactive: false, outputRoot: exportRoot);
 
         PopulateMinuteCache(dayStart);
 
@@ -27,7 +29,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
 
         await generator.GenerateAsync(download, generation, CancellationToken.None);
 
-        var exportPath = Path.Combine(_cacheRoot, "exports", "EURUSD_d1_20250114_20250114.csv");
+        var exportPath = Path.Combine(exportRoot, "EURUSD_d1_20250114_20250114.csv");
         Assert.True(File.Exists(exportPath));
 
         var lines = File.ReadAllLines(exportPath);
@@ -44,10 +46,125 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task GenerateAsync_DefaultOptions_UseUnixMilliseconds()
+    {
+        var dayStart = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
+        var download = CreateDownloadOptions(dayStart, dayStart.AddDays(1), includeInactive: false, outputRoot: null);
+
+        PopulateMinuteCache(dayStart);
+
+        var generator = new CsvGenerator(new ConsoleLogger());
+        var generation = new GenerationOptions(TimeZoneInfo.Utc, null);
+
+        var workDir = Path.Combine(_cacheRoot, "cwd");
+        Directory.CreateDirectory(workDir);
+        var original = Directory.GetCurrentDirectory();
+        Directory.SetCurrentDirectory(workDir);
+        try
+        {
+            await generator.GenerateAsync(download, generation, CancellationToken.None);
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(original);
+        }
+
+        var exportPath = Path.Combine(workDir, "EURUSD_d1_20250114_20250114.csv");
+        Assert.True(File.Exists(exportPath));
+
+        var lines = File.ReadAllLines(exportPath);
+        var row = lines[1].Split(',');
+        Assert.True(row[0].All(char.IsDigit), "Timestamp should be Unix milliseconds.");
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task GenerateAsync_TickCsv_DefaultUtcMatchesCustomTimezoneBody()
+    {
+        var start = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
+        var end = start.AddDays(1);
+        PopulateTickCache(start);
+
+        var generator = new CsvGenerator(new ConsoleLogger());
+        var utcDownload = CreateTickOptions(start, end, outputRoot: Path.Combine(_cacheRoot, "utc-export"));
+        var tzDownload = CreateTickOptions(start, end, outputRoot: Path.Combine(_cacheRoot, "tz-export"));
+
+        var utcGeneration = new GenerationOptions(TimeZoneInfo.Utc, null);
+        var tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var tzGeneration = new GenerationOptions(tz, "yyyy.MM.dd HH:mm:ss");
+
+        await generator.GenerateAsync(utcDownload, utcGeneration, CancellationToken.None);
+        await generator.GenerateAsync(tzDownload, tzGeneration, CancellationToken.None);
+
+        var utcPath = Directory.GetFiles(utcDownload.OutputDirectory!, "*.csv").Single();
+        var tzPath = Directory.GetFiles(tzDownload.OutputDirectory!, "*.csv").Single();
+
+        var utcBody = File.ReadLines(utcPath).Skip(1).ToList();
+        var tzBody = File.ReadLines(tzPath).Skip(1).ToList();
+
+        Assert.NotEmpty(utcBody);
+        Assert.Equal(utcBody.Count, tzBody.Count);
+
+        for (var i = 0; i < utcBody.Count; i++)
+        {
+            var utcParts = utcBody[i].Split(',');
+            var tzParts = tzBody[i].Split(',');
+            Assert.True(utcParts[0].All(char.IsDigit), "UTC timestamp should be milliseconds.");
+            Assert.Equal(utcParts.Skip(1), tzParts.Skip(1));
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task GenerateAsync_TickCsv_DefaultUtcUsesUnixMilliseconds()
+    {
+        var start = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
+        var end = start.AddDays(1);
+        PopulateTickCache(start);
+
+        var generator = new CsvGenerator(new ConsoleLogger());
+        var utcDownload = CreateTickOptions(start, end, outputRoot: Path.Combine(_cacheRoot, "utc-export"));
+        var utcGeneration = new GenerationOptions(TimeZoneInfo.Utc, null);
+
+        await generator.GenerateAsync(utcDownload, utcGeneration, CancellationToken.None);
+        var utcPath = Directory.GetFiles(utcDownload.OutputDirectory!, "*.csv").Single();
+
+        var lines = File.ReadAllLines(utcPath);
+        Assert.True(lines.Length > 1);
+
+        var firstTimestamp = lines[1].Split(',')[0];
+        Assert.True(firstTimestamp.All(char.IsDigit), "Timestamp should be Unix milliseconds.");
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task GenerateAsync_FromSeconds_AggregatesToCandles()
+    {
+        var hourStart = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
+        PopulateTickCache(hourStart);
+
+        var generator = new CsvGenerator(new ConsoleLogger());
+        var download = CreateTickOptions(hourStart, hourStart.AddHours(1), outputRoot: Path.Combine(_cacheRoot, "exports-s1"));
+        download = download with { Timeframe = DukascopyTimeframe.Second1 };
+
+        var generation = new GenerationOptions(TimeZoneInfo.Utc, "yyyy-MM-dd HH:mm:ss");
+
+        await generator.GenerateAsync(download, generation, CancellationToken.None);
+
+        var exportPath = Directory.GetFiles(download.OutputDirectory!, "*.csv").Single();
+        var lines = File.ReadAllLines(exportPath);
+
+        Assert.Equal("timestamp,open,high,low,close,volume", lines[0]);
+        Assert.True(lines.Length > 1);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task GenerateAsync_WithNewYorkTimezone_FormatsLocalTimestamps()
     {
         var dayStart = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
-        var download = CreateDownloadOptions(dayStart, dayStart.AddDays(1), includeInactive: false);
+        var exportRoot = Path.Combine(_cacheRoot, "exports");
+        var download = CreateDownloadOptions(dayStart, dayStart.AddDays(1), includeInactive: false, outputRoot: exportRoot);
 
         PopulateMinuteCache(dayStart);
 
@@ -57,7 +174,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
 
         await generator.GenerateAsync(download, generation, CancellationToken.None);
 
-        var exportPath = Path.Combine(_cacheRoot, "exports", "EURUSD_d1_20250114_20250114.csv");
+        var exportPath = Path.Combine(exportRoot, "EURUSD_d1_20250114_20250114.csv");
         Assert.True(File.Exists(exportPath));
 
         var lines = File.ReadAllLines(exportPath);
@@ -65,7 +182,26 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         Assert.Equal("2025-01-13 00:00:00", row[0]); // midnight local in America/New_York
     }
 
-    private DownloadOptions CreateDownloadOptions(DateTimeOffset fromUtc, DateTimeOffset toUtc, bool includeInactive)
+    private DownloadOptions CreateTickOptions(DateTimeOffset fromUtc, DateTimeOffset toUtc, string? outputRoot)
+    {
+        return new DownloadOptions(
+            "EURUSD",
+            fromUtc,
+            toUtc,
+            DukascopyTimeframe.Tick,
+            _cacheRoot,
+            outputRoot,
+            UseCache: true,
+            ForceRefresh: false,
+            IncludeInactivePeriods: false,
+            Concurrency: 1,
+            MaxRetries: 0,
+            RetryDelay: TimeSpan.FromSeconds(1),
+            RateLimitPause: TimeSpan.FromSeconds(1),
+            RateLimitRetryLimit: 1);
+    }
+
+    private DownloadOptions CreateDownloadOptions(DateTimeOffset fromUtc, DateTimeOffset toUtc, bool includeInactive, string? outputRoot)
     {
         return new DownloadOptions(
             "EURUSD",
@@ -73,7 +209,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
             toUtc,
             DukascopyTimeframe.Day1,
             _cacheRoot,
-            null,
+            outputRoot,
             UseCache: true,
             ForceRefresh: false,
             IncludeInactivePeriods: includeInactive,
@@ -82,6 +218,12 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
             RetryDelay: TimeSpan.FromSeconds(1),
             RateLimitPause: TimeSpan.FromSeconds(1),
             RateLimitRetryLimit: 1);
+    }
+
+    private string ResolveTickCachePath(DateTimeOffset hourStart)
+    {
+        var year = hourStart.UtcDateTime.Year.ToString("D4");
+        return Path.Combine(_cacheRoot, "EURUSD", year, "tick", $"{hourStart:yyyyMMdd_HH}.tick.bi5");
     }
 
     private string ResolveMinuteCachePath(DateTimeOffset dayStart)
@@ -96,6 +238,15 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
         var sample = Bi5TestSamples.WriteMinuteSample();
         File.Copy(sample, cachePath, overwrite: true);
+        File.Delete(sample);
+    }
+
+    private void PopulateTickCache(DateTimeOffset hourStart)
+    {
+        var path = ResolveTickCachePath(hourStart);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var sample = Bi5TestSamples.WriteTickSample();
+        File.Copy(sample, path, overwrite: true);
         File.Delete(sample);
     }
 
