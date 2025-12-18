@@ -15,8 +15,6 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
-      - name: Ensure local NuGet cache
-        run: mkdir -p "$HOME/.nuget/packages"
       - name: Run tests
         run: dotnet test tests/DukascopyDownloader.Tests/DukascopyDownloader.Tests.csproj
       - name: Publish binaries
