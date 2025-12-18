@@ -1,8 +1,12 @@
-name: Release from main
+name: Release from branch
 
 on:
   workflow_dispatch:
     inputs:
+      branch:
+        description: "Source branch to release from"
+        default: main
+        required: true
       prerelease:
         type: boolean
         description: "Mark release as prerelease"
@@ -19,6 +23,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          ref: ${{ inputs.branch }}
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
