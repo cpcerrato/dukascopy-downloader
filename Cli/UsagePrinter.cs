@@ -16,7 +16,7 @@ internal static class UsagePrinter
         Console.WriteLine("  -t, --to                   End date (UTC, inclusive).");
         Console.WriteLine("      --timeframe            tick|s1|m1|m5|m15|m30|h1|h4|d1|mn1 (default: tick).");
         Console.WriteLine("      --cache-root           Cache folder (.dukascopy-downloader-cache).");
-        Console.WriteLine("  -o, --output               Optional directory to mirror BI5 files.");
+        Console.WriteLine("  -o, --output               Optional directory to mirror BI5 files and CSV exports (defaults to CWD for reports).");
         Console.WriteLine("      --concurrency          Parallel downloads (default: cores - 1).");
         Console.WriteLine("      --max-retries          Attempts per file (default: 4).");
         Console.WriteLine("      --retry-delay          Delay between retries (default: 5s).");
