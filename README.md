@@ -18,7 +18,7 @@ Cache-first Dukascopy BI5 downloader inspired by [dukascopy-node](https://github
 ### macOS / Linux (curl installer)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/lastko/dukascopy-downloader/main/scripts/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/cpcerrato/dukascopy-downloader/refs/heads/main/scripts/install.sh | sudo bash
 ```
 
 Set `INSTALL_DIR` (default: `/usr/local/bin`) or `VERSION=v1.2.3` before running to install a specific release. The script detects your OS/architecture, downloads the right archive from the latest GitHub release, and places `dukascopy-downloader` on your PATH.
@@ -26,7 +26,7 @@ Set `INSTALL_DIR` (default: `/usr/local/bin`) or `VERSION=v1.2.3` before running
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/lastko/dukascopy-downloader/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/cpcerrato/dukascopy-downloader/refs/heads/main/scripts/install.ps1 | iex
 ```
 
 Optional parameters: `-Version v1.2.3` and `-InstallDir "C:\Tools"`. The script fetches the zip from the latest GitHub release and copies `dukascopy-downloader.exe` to the chosen directory.
