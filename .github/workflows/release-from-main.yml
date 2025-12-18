@@ -24,6 +24,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
+      - name: Ensure local NuGet cache
+        run: mkdir -p "$HOME/.nuget/packages"
       - name: Verify project version
         run: |
           file_version=$(grep -m1 -oE '<Version>[^<]+' dukascopy-downloader.csproj | sed 's/<Version>//')
