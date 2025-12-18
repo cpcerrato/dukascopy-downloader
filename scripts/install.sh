@@ -42,11 +42,19 @@ if [[ "$VERSION" == "latest" ]]; then
     echo "Unable to determine latest release tag for ${REPO}" >&2
     exit 1
   fi
-  asset="dukascopy-downloader-${release_tag}-${platform}-${arch}.tar.gz"
+  build_version="${release_tag#v}"
+  asset="dukascopy-downloader-${build_version}-${platform}-${arch}.tar.gz"
   url="https://github.com/${REPO}/releases/download/${release_tag}/${asset}"
 else
-  asset="dukascopy-downloader-${VERSION}-${platform}-${arch}.tar.gz"
-  url="https://github.com/${REPO}/releases/download/${VERSION}/${asset}"
+  if [[ "$VERSION" == v* ]]; then
+    tag="$VERSION"
+    build_version="${VERSION#v}"
+  else
+    tag="v$VERSION"
+    build_version="$VERSION"
+  fi
+  asset="dukascopy-downloader-${build_version}-${platform}-${arch}.tar.gz"
+  url="https://github.com/${REPO}/releases/download/${tag}/${asset}"
 fi
 
 tmpdir=$(mktemp -d)
