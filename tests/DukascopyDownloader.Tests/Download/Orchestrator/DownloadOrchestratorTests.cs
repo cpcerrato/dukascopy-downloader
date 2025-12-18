@@ -4,6 +4,7 @@ using DukascopyDownloader.Logging;
 using DukascopyDownloader.Tests.Download.Fakes;
 using DukascopyDownloader.Tests.Download.Support;
 using DukascopyDownloader.Tests.Support;
+using System.Diagnostics;
 using Xunit;
 
 namespace DukascopyDownloader.Tests.Download.Orchestrator;

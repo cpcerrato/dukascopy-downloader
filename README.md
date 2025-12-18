@@ -99,7 +99,7 @@ dukascopy-downloader \
 | `-t, --to` | Inclusive UTC end date (`YYYY-MM-DD`). |
 | `--timeframe` | `tick`, `s1`, `m1`, `m5`, `m15`, `m30`, `h1`, `h4`, `d1`, `mn1` (default `tick`). |
 | `--cache-root` | Cache directory (default: `./.dukascopy-downloader-cache`). |
-| `-o, --output` | Optional mirror folder for verified BI5 files. |
+| `-o, --output` | Optional mirror folder for verified BI5 files and CSV exports (defaults to current working directory for reports). |
 | `-c, --concurrency` | Parallel downloads (default: CPU cores − 1). |
 | `--max-retries` | Retry attempts per file (default 4). |
 | `--retry-delay` | Delay between retries (default `5s`). |
