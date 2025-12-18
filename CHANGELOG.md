@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.1.3
+- CLI help clarified: `-o/--output` also applies to CSV exports (defaults to current working directory when not provided).
+
 ## 0.1.2
 - Stream tick and candle CSV exports directly to disk (no large in-memory buffers) and honor `--output`/CWD for exports.
 - Default CSV timestamps are UTC Unix milliseconds unless a timezone/date format is provided.
