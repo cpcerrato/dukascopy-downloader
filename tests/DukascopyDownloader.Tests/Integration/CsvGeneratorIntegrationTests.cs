@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -40,6 +41,29 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         Assert.Equal("1.18", row[3]);   // low
         Assert.Equal("1.35", row[4]);   // close
         Assert.Equal("11.5", row[5]);   // volume
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task GenerateAsync_DefaultOptions_UseUnixMilliseconds()
+    {
+        var dayStart = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
+        var download = CreateDownloadOptions(dayStart, dayStart.AddDays(1), includeInactive: false);
+
+        PopulateMinuteCache(dayStart);
+
+        var generator = new CsvGenerator(new ConsoleLogger());
+        var generation = new GenerationOptions(TimeZoneInfo.Utc, null);
+
+        await generator.GenerateAsync(download, generation, CancellationToken.None);
+
+        var exportPath = Path.Combine(_cacheRoot, "exports", "EURUSD_d1_20250114_20250114.csv");
+        Assert.True(File.Exists(exportPath));
+
+        var lines = File.ReadAllLines(exportPath);
+        var row = lines[1].Split(',');
+        var expected = dayStart.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        Assert.Equal(expected, row[0]);
     }
 
     [Fact]

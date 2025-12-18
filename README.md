@@ -130,6 +130,7 @@ dukascopy-downloader \
 - Cache writes always occur; reads are skipped when `--no-cache` is supplied or when `--force` is used to bypass existing entries.
 - CSV exports are saved under `cache-root/exports/{instrument}_{timeframe}_{from}_{to}.csv`.
 - Timezone/date-format options affect only the CSV timestamps; the downloader always uses UTC for fetching.
+- Without `--timezone`/`--date-format`, CSV `timestamp` values are emitted as Unix milliseconds (UTC). Provide either option to produce human-readable strings.
 - On rate-limit responses (`HTTP 429`), all downloads pause for the configured window before retrying.
 - Dukascopy sometimes serves **0-byte BI5 files** on inactive sessions (weekends, holidays). These are treated as valid “no activity” slices; combine with `--include-inactive` to synthesize flat, zero-volume candles spanning the gap using the last traded price.
 - Use `--version` to print the CLI version and exit immediately.

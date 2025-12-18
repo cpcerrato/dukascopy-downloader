@@ -195,6 +195,12 @@ internal sealed class CsvGenerator
 
     private static string FormatTimestamp(DateTimeOffset localTime, GenerationOptions options)
     {
+        if (!options.HasCustomSettings)
+        {
+            var utc = localTime.ToUniversalTime();
+            return utc.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
+        }
+
         var format = string.IsNullOrWhiteSpace(options.DateFormat) ? "yyyy-MM-dd HH:mm:ss" : options.DateFormat!;
         return localTime.ToString(format, CultureInfo.InvariantCulture);
     }
