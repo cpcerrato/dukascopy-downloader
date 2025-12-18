@@ -73,3 +73,5 @@ temp/
 *.parquet
 *.bi5
 *.empty
+
+*scripts/benchmark.sh

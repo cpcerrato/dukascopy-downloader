@@ -1,5 +1,9 @@
+using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Threading;
+using System.Threading.Channels;
 using DukascopyDownloader.Logging;
 
 namespace DukascopyDownloader.Download;
@@ -10,13 +14,29 @@ internal sealed class DownloadOrchestrator
     private readonly HttpClient _httpClient;
     private readonly RateLimitGate _rateLimitGate = new();
 
-    public DownloadOrchestrator(ConsoleLogger logger)
+    internal sealed record DownloadJob(DownloadSlice Slice, int Attempts, int RateLimitHits);
+
+    internal enum JobDecisionKind
+    {
+        Completed,
+        Requeue,
+        Failed
+    }
+
+    internal sealed record JobDecision(JobDecisionKind Kind, DownloadJob? Job, TimeSpan Delay, Exception? Error)
+    {
+        public static JobDecision Completed() => new(JobDecisionKind.Completed, null, TimeSpan.Zero, null);
+        public static JobDecision Requeue(DownloadJob job, TimeSpan delay) => new(JobDecisionKind.Requeue, job, delay, null);
+        public static JobDecision Failed(Exception error) => new(JobDecisionKind.Failed, null, TimeSpan.Zero, error);
+    }
+
+    public DownloadOrchestrator(ConsoleLogger logger, HttpMessageHandler? httpHandler = null)
     {
         _logger = logger;
-        _httpClient = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(120)
-        };
+        _httpClient = httpHandler is null
+            ? new HttpClient()
+            : new HttpClient(httpHandler, disposeHandler: false);
+        _httpClient.Timeout = TimeSpan.FromSeconds(120);
         _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("dukascopy-downloader", "1.0"));
     }
 
@@ -39,10 +59,42 @@ internal sealed class DownloadOrchestrator
 
         var cacheManager = new CacheManager(options.CacheRoot, options.OutputDirectory);
         var progress = new DownloadProgress();
+        using var failureManifest = new FailureManifest(options.CacheRoot);
 
-        using var throttler = new SemaphoreSlim(options.Concurrency, options.Concurrency);
-        var tasks = slices.Select(slice => ProcessSliceAsync(slice, options, cacheManager, throttler, progress, cancellationToken));
-        await Task.WhenAll(tasks);
+        var channel = Channel.CreateUnbounded<DownloadJob>(new UnboundedChannelOptions
+        {
+            SingleReader = false,
+            SingleWriter = false,
+            AllowSynchronousContinuations = false
+        });
+
+        foreach (var slice in slices)
+        {
+            channel.Writer.TryWrite(new DownloadJob(slice, Attempts: 0, RateLimitHits: 0));
+        }
+
+        var remainingJobs = slices.Count;
+        void MarkJobCompleted()
+        {
+            if (Interlocked.Decrement(ref remainingJobs) == 0)
+            {
+                channel.Writer.TryComplete();
+            }
+        }
+
+        var workers = Enumerable.Range(0, options.Concurrency)
+            .Select(_ => RunWorkerAsync(
+                channel.Reader,
+                channel.Writer,
+                options,
+                cacheManager,
+                progress,
+                failureManifest,
+                MarkJobCompleted,
+                cancellationToken))
+            .ToArray();
+
+        await Task.WhenAll(workers);
 
         _logger.Success($"Downloads completed. New: {progress.SuccessCount}, Cache hits: {progress.CacheHits}, Missing: {progress.SkippedMissing}, Failed: {progress.Failures}.");
 
@@ -52,32 +104,49 @@ internal sealed class DownloadOrchestrator
         }
     }
 
-    private async Task ProcessSliceAsync(
-        DownloadSlice slice,
+    private async Task RunWorkerAsync(
+        ChannelReader<DownloadJob> reader,
+        ChannelWriter<DownloadJob> writer,
         DownloadOptions options,
         CacheManager cacheManager,
-        SemaphoreSlim throttler,
         DownloadProgress progress,
+        FailureManifest failureManifest,
+        Action markJobCompleted,
         CancellationToken cancellationToken)
     {
-        await throttler.WaitAsync(cancellationToken);
-        try
+        while (await reader.WaitToReadAsync(cancellationToken))
         {
-            await ProcessSliceInternalAsync(slice, options, cacheManager, progress, cancellationToken);
-        }
-        finally
-        {
-            throttler.Release();
+            while (reader.TryRead(out var job))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var decision = await ProcessJobAsync(job, options, cacheManager, progress, failureManifest, cancellationToken);
+
+                switch (decision.Kind)
+                {
+                    case JobDecisionKind.Completed:
+                        markJobCompleted();
+                        break;
+                    case JobDecisionKind.Requeue:
+                        ScheduleRetry(decision.Job!, decision.Delay, writer, cancellationToken);
+                        break;
+                    case JobDecisionKind.Failed:
+                        markJobCompleted();
+                        writer.TryComplete(decision.Error);
+                        throw decision.Error!;
+                }
+            }
         }
     }
 
-    private async Task ProcessSliceInternalAsync(
-        DownloadSlice slice,
+    internal async Task<JobDecision> ProcessJobAsync(
+        DownloadJob job,
         DownloadOptions options,
         CacheManager cacheManager,
         DownloadProgress progress,
+        FailureManifest failureManifest,
         CancellationToken cancellationToken)
     {
+        var slice = job.Slice;
         var destination = cacheManager.ResolveCachePath(slice);
         var summary = slice.Describe();
 
@@ -86,87 +155,114 @@ internal sealed class DownloadOrchestrator
             progress.IncrementCacheHit();
             _logger.Verbose($"Cache hit {summary} -> {destination}");
             await cacheManager.SyncToOutputAsync(destination, slice, cancellationToken);
-            return;
+            return JobDecision.Completed();
         }
 
         Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
         var tempPath = destination + ".partial";
-
-        var attempt = 0;
-        var rateLimitHits = 0;
-        Exception? lastError = null;
-
-        while (attempt <= options.MaxRetries)
+        if (File.Exists(tempPath))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            attempt++;
+            File.Delete(tempPath);
+        }
 
+        var attemptNumber = job.Attempts + 1;
+        var maxAttempts = options.MaxRetries + 1;
+
+        try
+        {
+            await _rateLimitGate.WaitIfNeededAsync(cancellationToken);
+            using var response = await _httpClient.GetAsync(slice.Url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                var nextRateLimitHits = job.RateLimitHits + 1;
+                if (nextRateLimitHits > options.RateLimitRetryLimit)
+                {
+                    var error = new DownloadException($"Persistent rate limit after {nextRateLimitHits} attempts for {summary}.");
+                    progress.IncrementFailure();
+                    failureManifest.Record(summary, error.Message);
+                    return JobDecision.Failed(error);
+                }
+
+                _logger.Warn($"Rate limit detected ({summary}). Attempt {nextRateLimitHits}/{options.RateLimitRetryLimit}. Pausing {options.RateLimitPause.TotalSeconds:F0}s.");
+                _rateLimitGate.Trigger(options.RateLimitPause, _logger);
+                var retryJob = job with { Attempts = attemptNumber, RateLimitHits = nextRateLimitHits };
+                return JobDecision.Requeue(retryJob, TimeSpan.Zero);
+            }
+
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                progress.IncrementMissing();
+                _logger.Warn($"No data available (404) for {summary}. Skipping.");
+                return JobDecision.Completed();
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new HttpRequestException($"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
+            }
+
+            await using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
+                await response.Content.CopyToAsync(fs, cancellationToken);
+            }
+
+            await Bi5Verifier.VerifyAsync(tempPath, cancellationToken);
+            File.Move(tempPath, destination, overwrite: true);
+            await cacheManager.SyncToOutputAsync(destination, slice, cancellationToken);
+
+            progress.IncrementSuccess();
+            _logger.Info($"OK {summary}");
+            return JobDecision.Completed();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (attemptNumber >= maxAttempts)
+            {
+                progress.IncrementFailure();
+                failureManifest.Record(summary, ex.Message);
+                var error = new DownloadException($"Unable to download {summary} after {maxAttempts} attempts.", ex);
+                return JobDecision.Failed(error);
+            }
+
+            _logger.Warn($"Failure downloading {summary} (attempt {attemptNumber}/{maxAttempts}): {ex.Message}. Retrying in {options.RetryDelay.TotalSeconds:F0}s.");
+            var retryJob = job with { Attempts = attemptNumber };
+            return JobDecision.Requeue(retryJob, options.RetryDelay);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+    }
+
+    private static void ScheduleRetry(DownloadJob job, TimeSpan delay, ChannelWriter<DownloadJob> writer, CancellationToken cancellationToken)
+    {
+        _ = Task.Run(async () =>
+        {
             try
             {
-                await _rateLimitGate.WaitIfNeededAsync(cancellationToken);
-                using var response = await _httpClient.GetAsync(slice.Url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-
-                if (response.StatusCode == HttpStatusCode.TooManyRequests)
+                if (delay > TimeSpan.Zero)
                 {
-                    rateLimitHits++;
-                    if (rateLimitHits > options.RateLimitRetryLimit)
-                    {
-                        throw new DownloadException($"Persistent rate limit after {rateLimitHits} attempts for {summary}.");
-                    }
-
-                    _logger.Warn($"Rate limit detected ({summary}). Attempt {rateLimitHits}/{options.RateLimitRetryLimit}. Pausing {options.RateLimitPause.TotalSeconds:F0}s.");
-                    _rateLimitGate.Trigger(options.RateLimitPause, _logger);
-                    continue;
+                    await Task.Delay(delay, cancellationToken);
                 }
 
-                if (response.StatusCode == HttpStatusCode.NotFound)
-                {
-                    progress.IncrementMissing();
-                    _logger.Warn($"No data available (404) for {summary}. Skipping.");
-                    return;
-                }
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    throw new HttpRequestException($"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
-                }
-
-                await using (var fs = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
-                {
-                    await response.Content.CopyToAsync(fs, cancellationToken);
-                }
-
-                await Bi5Verifier.VerifyAsync(tempPath, cancellationToken);
-                File.Move(tempPath, destination, overwrite: true);
-                await cacheManager.SyncToOutputAsync(destination, slice, cancellationToken);
-
-                progress.IncrementSuccess();
-                _logger.Info($"OK {summary}");
-                return;
+                await writer.WriteAsync(job, cancellationToken);
             }
             catch (OperationCanceledException)
             {
-                throw;
+                // Cancellation requested; drop the job so shutdown can proceed.
             }
-            catch (Exception ex)
+            catch (ChannelClosedException)
             {
-                lastError = ex;
-                if (attempt > options.MaxRetries)
-                {
-                    break;
-                }
-
-                _logger.Warn($"Failure downloading {summary} (attempt {attempt}/{options.MaxRetries + 1}): {ex.Message}. Retrying in {options.RetryDelay.TotalSeconds:F0}s.");
-                if (File.Exists(tempPath))
-                {
-                    File.Delete(tempPath);
-                }
-
-                await Task.Delay(options.RetryDelay, cancellationToken);
+                // Channel closed due to fatal failure or completion.
             }
-        }
-
-        progress.IncrementFailure();
-        throw new DownloadException($"Unable to download {summary} after {options.MaxRetries + 1} attempts.", lastError);
+        });
     }
 }

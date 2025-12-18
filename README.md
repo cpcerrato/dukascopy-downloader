@@ -9,6 +9,7 @@ Cache-first Dukascopy BI5 downloader inspired by [dukascopy-node](https://github
 - CSV generation that aggregates ticks/minutes into any Dukascopy timeframe and supports timezone/date-format overrides.
 - Optional gap filling (`--include-inactive`) to synthesize flat candles during market closures.
 - Clean logging, cancellation handling, and a suite of unit/integration/end-to-end tests.
+- Automatic failure manifest (`download-failures.json`) stored under the cache root whenever a slice exhausts all retries, enabling fast reruns.
 
 ---
 
@@ -125,6 +126,7 @@ dukascopy-downloader \
 - On rate-limit responses (`HTTP 429`), all downloads pause for the configured window before retrying.
 - Dukascopy sometimes serves **0-byte BI5 files** on inactive sessions (weekends, holidays). These are treated as valid “no activity” slices; combine with `--include-inactive` to synthesize flat, zero-volume candles spanning the gap using the last traded price.
 - Use `--version` to print the CLI version and exit immediately.
+- When downloads ultimately fail, a structured report is written to `cache-root/download-failures.json` so you can rerun or inspect the problematic slices quickly.
 
 ---
 
@@ -161,6 +163,16 @@ dotnet test tests/DukascopyDownloader.Tests/DukascopyDownloader.Tests.csproj
 - Update `<Version>` in `dukascopy-downloader.csproj`.
 - Run `./scripts/publish-all.sh` locally for a smoke check.
 - Trigger the **Manual build** workflow for CI artifacts, or use **Release from main** (workflow_dispatch) with the desired version to tag the current commit, publish artifacts, and create a GitHub release automatically.
+
+### Benchmarking
+
+Compare this CLI to `dukascopy-node` under the same workload:
+
+```bash
+./scripts/benchmark.sh ./dukascopy-downloader 'npx dukascopy-node'
+```
+
+Environment variables such as `FROM`, `TO`, `TIMEFRAME`, and `CONCURRENCY` adjust the scenario. The script measures cold-cache performance using `/usr/bin/time`.
 
 ### Adding Tests
 

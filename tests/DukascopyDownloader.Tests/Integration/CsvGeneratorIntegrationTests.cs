@@ -20,11 +20,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         var dayStart = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
         var download = CreateDownloadOptions(dayStart, dayStart.AddDays(1), includeInactive: false);
 
-        var cachePath = ResolveMinuteCachePath(dayStart);
-        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
-        var sample = Bi5TestSamples.WriteMinuteSample();
-        File.Copy(sample, cachePath, overwrite: true);
-        File.Delete(sample);
+        PopulateMinuteCache(dayStart);
 
         var generator = new CsvGenerator(new ConsoleLogger());
         var generation = new GenerationOptions(TimeZoneInfo.Utc, "yyyy-MM-dd HH:mm:ss");
@@ -44,6 +40,29 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         Assert.Equal("1.18", row[3]);   // low
         Assert.Equal("1.35", row[4]);   // close
         Assert.Equal("11.5", row[5]);   // volume
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task GenerateAsync_WithNewYorkTimezone_FormatsLocalTimestamps()
+    {
+        var dayStart = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
+        var download = CreateDownloadOptions(dayStart, dayStart.AddDays(1), includeInactive: false);
+
+        PopulateMinuteCache(dayStart);
+
+        var generator = new CsvGenerator(new ConsoleLogger());
+        var tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var generation = new GenerationOptions(tz, "yyyy-MM-dd HH:mm:ss");
+
+        await generator.GenerateAsync(download, generation, CancellationToken.None);
+
+        var exportPath = Path.Combine(_cacheRoot, "exports", "EURUSD_d1_20250114_20250114.csv");
+        Assert.True(File.Exists(exportPath));
+
+        var lines = File.ReadAllLines(exportPath);
+        var row = lines[1].Split(',');
+        Assert.Equal("2025-01-13 00:00:00", row[0]); // midnight local in America/New_York
     }
 
     private DownloadOptions CreateDownloadOptions(DateTimeOffset fromUtc, DateTimeOffset toUtc, bool includeInactive)
@@ -69,6 +88,15 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
     {
         var year = dayStart.UtcDateTime.Year.ToString("D4");
         return Path.Combine(_cacheRoot, "EURUSD", year, "m1", $"{dayStart:yyyyMMdd}.m1.bi5");
+    }
+
+    private void PopulateMinuteCache(DateTimeOffset dayStart)
+    {
+        var cachePath = ResolveMinuteCachePath(dayStart);
+        Directory.CreateDirectory(Path.GetDirectoryName(cachePath)!);
+        var sample = Bi5TestSamples.WriteMinuteSample();
+        File.Copy(sample, cachePath, overwrite: true);
+        File.Delete(sample);
     }
 
     public void Dispose()

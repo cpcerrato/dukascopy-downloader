@@ -46,4 +46,24 @@ public class CandleAggregatorTests
         Assert.Equal(1.05m + 59, candle.Close);
         Assert.Equal(60, candle.Volume);
     }
+
+    [Fact]
+    public void AggregateMinutes_UsesTimezoneOffsetsAcrossDst()
+    {
+        var startUtc = new DateTimeOffset(2025, 3, 9, 4, 0, 0, TimeSpan.Zero);
+        var minutes = new[]
+        {
+            new MinuteRecord(startUtc, 1.2m, 1.3m, 1.1m, 1.25m, 10)
+        };
+
+        var tzUs = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var tzEu = TimeZoneInfo.FindSystemTimeZoneById("Europe/Berlin");
+
+        var usCandle = CandleAggregator.AggregateMinutes(minutes, DukascopyTimeframe.Day1, tzUs).Single();
+        var euCandle = CandleAggregator.AggregateMinutes(minutes, DukascopyTimeframe.Day1, tzEu).Single();
+
+        Assert.Equal(TimeSpan.FromHours(-5), usCandle.LocalStart.Offset);
+        Assert.Equal(TimeSpan.FromHours(1), euCandle.LocalStart.Offset);
+        Assert.NotEqual(usCandle.LocalStart, euCandle.LocalStart);
+    }
 }

@@ -27,4 +27,6 @@ internal static class Bi5TestSamples
         File.WriteAllBytes(path, Convert.FromBase64String(base64));
         return path;
     }
+
+    public static byte[] TickBytes => Convert.FromBase64String(TickSampleBase64);
 }
