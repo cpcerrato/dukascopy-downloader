@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version tag (e.g. v0.2.0). Must match csproj <Version>."
+        description: "Version tag (e.g. v1.0.0 or 1.0.0). Must match csproj <Version>."
         required: true
       prerelease:
         type: boolean
@@ -25,33 +25,44 @@ jobs:
         with:
           dotnet-version: '9.0.x'
       - name: Verify project version
+        id: version
         run: |
           file_version=$(grep -m1 -oE '<Version>[^<]+' dukascopy-downloader.csproj | sed 's/<Version>//')
           echo "Project version: $file_version"
-          if [ "$file_version" != "${{ inputs.version }}" ]; then
-            echo "Version mismatch: expected ${{ inputs.version }}"
+          input="${{ inputs.version }}"
+          if [[ "$input" == v* ]]; then
+            tag="$input"
+            build="${input#v}"
+          else
+            tag="v$input"
+            build="$input"
+          fi
+          if [ "$file_version" != "$build" ]; then
+            echo "Version mismatch: expected $build"
             exit 1
           fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Run tests
         run: dotnet test tests/DukascopyDownloader.Tests/DukascopyDownloader.Tests.csproj
       - name: Build release artifacts
         run: |
           chmod +x scripts/publish-all.sh
-          VERSION="${{ inputs.version }}" ./scripts/publish-all.sh
+          VERSION="${{ steps.version.outputs.build }}" ./scripts/publish-all.sh
       - name: Tag commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${{ inputs.version }}"
-          git push origin "${{ inputs.version }}"
+          git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dukascopy-downloader-${{ inputs.version }}
+          name: dukascopy-downloader-${{ steps.version.outputs.tag }}
           path: artifacts/**
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.version }}
+          tag_name: ${{ steps.version.outputs.tag }}
           prerelease: ${{ inputs.prerelease }}
           files: artifacts/*

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version label (e.g. 0.1.0). Defaults to project file value."
+        description: "Version label (e.g. 1.0.0 or v1.0.0). Defaults to project file value."
         required: false
 
 jobs:
@@ -15,14 +15,37 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
+      - name: Determine build version
+        id: version
+        run: |
+          file_version=$(grep -m1 -oE '<Version>[^<]+' dukascopy-downloader.csproj | sed 's/<Version>//')
+          input="${{ inputs.version }}"
+          if [ -z "$input" ]; then
+            build="$file_version"
+            tag="v$file_version"
+          else
+            if [[ "$input" == v* ]]; then
+              tag="$input"
+              build="${input#v}"
+            else
+              tag="v$input"
+              build="$input"
+            fi
+            if [ "$build" != "$file_version" ]; then
+              echo "Version mismatch: input $input does not match project version $file_version" >&2
+              exit 1
+            fi
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Run tests
         run: dotnet test tests/DukascopyDownloader.Tests/DukascopyDownloader.Tests.csproj
       - name: Publish binaries
         run: |
           chmod +x scripts/publish-all.sh
-          VERSION="${{ inputs.version }}" ./scripts/publish-all.sh
+          VERSION="${{ steps.version.outputs.build }}" ./scripts/publish-all.sh
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: dukascopy-downloader-${{ inputs.version || 'manual' }}
+          name: dukascopy-downloader-${{ steps.version.outputs.tag }}
           path: artifacts/**
