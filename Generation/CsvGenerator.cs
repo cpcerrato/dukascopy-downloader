@@ -160,9 +160,14 @@ internal sealed class CsvGenerator
 
         {
             await using var stream = new FileStream(exportPath, FileMode.Create, FileAccess.Write, FileShare.Read, bufferSize: 64 * 1024, useAsync: true);
-            await using var writer = new StreamWriter(stream, Encoding.UTF8);
+        await using var writer = new StreamWriter(stream, Encoding.UTF8);
 
-            await writer.WriteLineAsync("timestamp,ask,bid,askVolume,bidVolume");
+        if (generation.IncludeHeader)
+        {
+            await writer.WriteLineAsync(generation.Template == ExportTemplate.MetaTrader5
+                ? "timestamp,bid,ask,volume"
+                : "timestamp,ask,bid,askVolume,bidVolume");
+        }
 
             foreach (var slice in slices)
             {
@@ -196,17 +201,30 @@ internal sealed class CsvGenerator
                     cancellationToken.ThrowIfCancellationRequested();
 
                     var local = TimeZoneInfo.ConvertTime(tick.TimestampUtc, generation.TimeZone);
-                    var line = string.Join(",",
+                string line;
+                if (generation.Template == ExportTemplate.MetaTrader5)
+                {
+                    var volume = (tick.AskVolume + tick.BidVolume).ToString(CultureInfo.InvariantCulture);
+                    line = string.Join(",",
+                        FormatTimestamp(local, generation),
+                        tick.Bid.ToString(CultureInfo.InvariantCulture),
+                        tick.Ask.ToString(CultureInfo.InvariantCulture),
+                        volume);
+                }
+                else
+                {
+                    line = string.Join(",",
                         FormatTimestamp(local, generation),
                         tick.Ask.ToString(CultureInfo.InvariantCulture),
                         tick.Bid.ToString(CultureInfo.InvariantCulture),
                         tick.AskVolume.ToString(CultureInfo.InvariantCulture),
                         tick.BidVolume.ToString(CultureInfo.InvariantCulture));
-
-                    await writer.WriteLineAsync(line);
-                    rowsWritten++;
                 }
+
+                await writer.WriteLineAsync(line);
+                rowsWritten++;
             }
+        }
         }
 
         if (rowsWritten == 0)
@@ -232,7 +250,10 @@ internal sealed class CsvGenerator
         await using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read, bufferSize: 64 * 1024, useAsync: true);
         await using var writer = new StreamWriter(stream, Encoding.UTF8);
 
-        await writer.WriteLineAsync("timestamp,open,high,low,close,volume");
+        if (generation.IncludeHeader)
+        {
+            await writer.WriteLineAsync("timestamp,open,high,low,close,volume");
+        }
 
         foreach (var candle in candles)
         {

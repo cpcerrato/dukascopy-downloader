@@ -91,9 +91,10 @@ internal static class Program
         var tsDescription = generation.HasCustomSettings
             ? $"{generation.TimeZone.Id} format '{generation.DateFormat ?? "yyyy-MM-dd HH:mm:ss"}'"
             : "UTC (Unix ms)";
+        var template = generation.Template != ExportTemplate.None ? $"Template: {generation.Template}" : "Template: none";
 
         logger.Info($"Instrument: {download.Instrument}, Timeframe: {tf}, Dates: {download.FromUtc:yyyy-MM-dd}..{toInclusive:yyyy-MM-dd}, Timestamps: {tsDescription}");
         logger.Info($"Cache: {download.CacheRoot}, Output: {(string.IsNullOrWhiteSpace(download.OutputDirectory) ? "cwd" : download.OutputDirectory)}");
-        logger.Info($"Concurrency: {download.Concurrency}, Retries: {download.MaxRetries}, Rate-limit pause: {download.RateLimitPause.TotalSeconds:F0}s x{download.RateLimitRetryLimit}");
+        logger.Info($"Concurrency: {download.Concurrency}, Retries: {download.MaxRetries}, Rate-limit pause: {download.RateLimitPause.TotalSeconds:F0}s x{download.RateLimitRetryLimit}, {template}");
     }
 }

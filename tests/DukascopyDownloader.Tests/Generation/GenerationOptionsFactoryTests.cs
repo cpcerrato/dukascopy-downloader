@@ -10,19 +10,20 @@ public class GenerationOptionsFactoryTests
     [Fact]
     public void TryCreate_WithValidTimezoneAndFormat_Succeeds()
     {
-        var success = _factory.TryCreate("UTC", "yyyy-MM-dd", out var options, out var error);
+        var success = _factory.TryCreate("UTC", "yyyy-MM-dd", ExportTemplate.None, out var options, out var error);
 
         Assert.True(success);
         Assert.Null(error);
-        Assert.NotNull(options);
-        Assert.Equal(TimeZoneInfo.Utc, options!.TimeZone);
+        Assert.Equal(TimeZoneInfo.Utc, options.TimeZone);
         Assert.Equal("yyyy-MM-dd", options.DateFormat);
+        Assert.True(options.IncludeHeader);
+        Assert.Equal(ExportTemplate.None, options.Template);
     }
 
     [Fact]
     public void TryCreate_WithInvalidTimezone_Fails()
     {
-        var success = _factory.TryCreate("Not/AZone", null, out _, out var error);
+        var success = _factory.TryCreate("Not/AZone", null, ExportTemplate.None, out _, out var error);
 
         Assert.False(success);
         Assert.Contains("not found", error, StringComparison.OrdinalIgnoreCase);
@@ -31,10 +32,22 @@ public class GenerationOptionsFactoryTests
     [Fact]
     public void TryCreate_TrimsFormatAndStoresIt()
     {
-        var success = _factory.TryCreate("UTC", "  yyyy/MM/dd HH:mm  ", out var options, out var error);
+        var success = _factory.TryCreate("UTC", "  yyyy/MM/dd HH:mm  ", ExportTemplate.None, out var options, out var error);
 
         Assert.True(success);
         Assert.Null(error);
         Assert.Equal("yyyy/MM/dd HH:mm", options!.DateFormat);
+    }
+
+    [Fact]
+    public void TryCreate_WithMetaTraderTemplate_SetsDefaults()
+    {
+        var success = _factory.TryCreate("Europe/London", null, ExportTemplate.MetaTrader5, out var options, out var error);
+
+        Assert.True(success);
+        Assert.Null(error);
+        Assert.Equal(ExportTemplate.MetaTrader5, options.Template);
+        Assert.False(options.IncludeHeader);
+        Assert.Equal("yyyy.MM.dd HH:mm:ss", options.DateFormat);
     }
 }

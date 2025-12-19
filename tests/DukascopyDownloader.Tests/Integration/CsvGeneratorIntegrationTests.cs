@@ -138,6 +138,60 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
 
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task GenerateAsync_TickCsv_MetaTraderTemplate_OmitsHeaderAndFormats()
+    {
+        var start = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
+        var end = start.AddDays(1);
+        PopulateTickCache(start);
+
+        var generator = new CsvGenerator(new ConsoleLogger());
+        var tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var mt5Generation = new GenerationOptions(tz, "yyyy.MM.dd HH:mm:ss", false, ExportTemplate.MetaTrader5);
+        var download = CreateTickOptions(start, end, outputRoot: Path.Combine(_cacheRoot, "mt5-export"));
+
+        await generator.GenerateAsync(download, mt5Generation, CancellationToken.None);
+        var path = Directory.GetFiles(download.OutputDirectory!, "*.csv").Single();
+        var lines = File.ReadAllLines(path);
+
+        Assert.True(lines.Length > 0);
+        Assert.DoesNotContain("timestamp", lines[0], StringComparison.OrdinalIgnoreCase);
+
+        var parts = lines[0].Split(',');
+        Assert.Equal(4, parts.Length);
+        Assert.True(DateTime.TryParseExact(parts[0], "yyyy.MM.dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out _));
+        Assert.True(double.TryParse(parts[3], NumberStyles.Any, CultureInfo.InvariantCulture, out var volume));
+        Assert.True(volume > 0);
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task GenerateAsync_CandleCsv_MetaTraderTemplate_OmitsHeaderAndFormats()
+    {
+        var dayStart = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
+        PopulateMinuteCache(dayStart);
+
+        var exportRoot = Path.Combine(_cacheRoot, "mt5-candles");
+        var download = CreateDownloadOptions(dayStart, dayStart.AddDays(1), includeInactive: false, outputRoot: exportRoot);
+
+        var generator = new CsvGenerator(new ConsoleLogger());
+        var tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var generation = new GenerationOptions(tz, "yyyy.MM.dd HH:mm:ss", false, ExportTemplate.MetaTrader5);
+
+        await generator.GenerateAsync(download, generation, CancellationToken.None);
+
+        var exportPath = Directory.GetFiles(exportRoot, "*.csv").Single();
+        var lines = File.ReadAllLines(exportPath);
+
+        Assert.True(lines.Length > 0);
+        Assert.DoesNotContain("timestamp", lines[0], StringComparison.OrdinalIgnoreCase);
+
+        var parts = lines[0].Split(',');
+        Assert.Equal(6, parts.Length);
+        Assert.True(DateTime.TryParseExact(parts[0], "yyyy.MM.dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out _));
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task GenerateAsync_FromSeconds_AggregatesToCandles()
     {
         var hourStart = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);

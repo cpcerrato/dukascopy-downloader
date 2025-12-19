@@ -48,6 +48,7 @@ internal sealed class CliParser
         ["tz"] = "timezone",
         ["date-format"] = "date-format",
         ["dateformat"] = "date-format",
+        ["export-template"] = "export-template",
         ["include-inactive"] = "include-inactive",
         ["fill-inactive"] = "include-inactive",
         ["fill-gaps"] = "include-inactive",
@@ -204,7 +205,17 @@ internal sealed class CliParser
         var timezoneValue = normalized.TryGetValue("timezone", out var tz) ? tz : null;
         var dateFormatValue = normalized.TryGetValue("date-format", out var df) ? df : null;
 
-        if (!_generationFactory.TryCreate(timezoneValue, dateFormatValue, out var generationOptions, out error))
+        var template = ExportTemplate.None;
+        if (normalized.TryGetValue("export-template", out var templateValue) && !string.IsNullOrWhiteSpace(templateValue))
+        {
+            template = templateValue.Trim().ToLowerInvariant() switch
+            {
+                "mt5" or "metatrader5" or "metatrader" => ExportTemplate.MetaTrader5,
+                _ => ExportTemplate.None
+            };
+        }
+
+        if (!_generationFactory.TryCreate(timezoneValue, dateFormatValue, template, out var generationOptions, out error))
         {
             return new CliParseResult(false, false, null, error);
         }

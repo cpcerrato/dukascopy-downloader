@@ -28,6 +28,7 @@ internal static class UsagePrinter
         Console.WriteLine("Generation options:");
         Console.WriteLine("      --timezone             Output timezone for CSV timestamps.");
         Console.WriteLine("      --date-format          Custom timestamp format.");
+        Console.WriteLine("      --export-template      Preset output format (mt5 supported). Overrides header/format.");
         Console.WriteLine("      --include-inactive     Fill closed-market intervals with flat candles (0 volume).");
         Console.WriteLine();
         Console.WriteLine("General:");

@@ -101,6 +101,7 @@ dukascopy-downloader \
 | `--cache-root` | Cache directory (default: `./.dukascopy-downloader-cache`). |
 | `-o, --output` | Optional mirror folder for verified BI5 files and CSV exports (defaults to current working directory for reports). |
 | `-c, --concurrency` | Parallel downloads (default: CPU cores − 1). |
+| `--export-template` | Preset output format; `mt5` removes headers and uses `yyyy.MM.dd HH:mm:ss`. |
 | `--max-retries` | Retry attempts per file (default 4). |
 | `--retry-delay` | Delay between retries (default `5s`). |
 | `--rate-limit-pause` | Sleep duration after HTTP 429 (default `30s`). |
