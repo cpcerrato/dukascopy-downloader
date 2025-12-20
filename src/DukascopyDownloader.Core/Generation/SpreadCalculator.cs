@@ -11,6 +11,10 @@ internal static class SpreadCalculator
     /// <summary>
     /// Infers tick size (point value) by computing the GCD of bid deltas. Returns null when insufficient deltas.
     /// </summary>
+    /// <param name="ticks">Tick records to inspect.</param>
+    /// <param name="minNonZeroDeltas">Minimum number of non-zero deltas required to accept inference.</param>
+    /// <param name="nonZeroDeltas">Outputs the count of non-zero deltas observed.</param>
+    /// <returns>Inferred tick size, or null when there is not enough signal.</returns>
     internal static decimal? InferTickSize(IEnumerable<TickRecord> ticks, int minNonZeroDeltas, out int nonZeroDeltas)
     {
         long gcd = 0;
@@ -53,6 +57,12 @@ internal static class SpreadCalculator
     /// <summary>
     /// Computes spread-in-points per timeframe bucket using the provided tick size and aggregation mode.
     /// </summary>
+    /// <param name="ticks">Tick records supplying bid/ask deltas.</param>
+    /// <param name="timeframe">Target aggregation timeframe.</param>
+    /// <param name="timeZone">Timezone for bucket alignment.</param>
+    /// <param name="tickSize">Point value used to convert price diff to points.</param>
+    /// <param name="aggregation">Aggregation mode (median/min/mean/last).</param>
+    /// <returns>Dictionary keyed by bucket start (local) with spread points.</returns>
     internal static IReadOnlyDictionary<DateTimeOffset, int> AggregateSpreads(
         IEnumerable<TickRecord> ticks,
         DukascopyTimeframe timeframe,

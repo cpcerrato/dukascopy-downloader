@@ -11,6 +11,9 @@ internal static class Bi5Decoder
     /// <summary>
     /// Decodes a BI5 tick file into timestamped tick records using the provided slice start as the anchor.
     /// </summary>
+    /// <param name="path">Path to the BI5 tick file.</param>
+    /// <param name="sliceStart">UTC start of the slice (hour-aligned) used to compute timestamps.</param>
+    /// <returns>List of decoded tick records.</returns>
     public static IReadOnlyList<TickRecord> ReadTicks(string path, DateTimeOffset sliceStart)
     {
         using var fs = File.OpenRead(path);
@@ -30,6 +33,9 @@ internal static class Bi5Decoder
     /// <summary>
     /// Decodes a BI5 minute file into minute records using the provided slice start as the anchor.
     /// </summary>
+    /// <param name="path">Path to the BI5 minute file.</param>
+    /// <param name="sliceStart">UTC start of the slice (day-aligned) used to compute timestamps.</param>
+    /// <returns>List of decoded minute records.</returns>
     public static IReadOnlyList<MinuteRecord> ReadMinutes(string path, DateTimeOffset sliceStart)
     {
         using var fs = File.OpenRead(path);

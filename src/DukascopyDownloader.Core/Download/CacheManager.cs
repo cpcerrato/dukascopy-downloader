@@ -16,6 +16,8 @@ internal sealed class CacheManager
     /// <summary>
     /// Resolves the on-disk cache path for a given slice, creating intermediate directories.
     /// </summary>
+    /// <param name="slice">Slice describing instrument, timeframe and start time.</param>
+    /// <returns>Full file path under the cache root.</returns>
     public string ResolveCachePath(DownloadSlice slice)
     {
         var yearSegment = slice.Start.UtcDateTime.Year.ToString("D4", CultureInfo.InvariantCulture);
@@ -27,6 +29,9 @@ internal sealed class CacheManager
     /// <summary>
     /// Mirrors a verified cache file into the configured output directory (if any), skipping when already present.
     /// </summary>
+    /// <param name="cachePath">Path to the cached BI5 file.</param>
+    /// <param name="slice">Slice metadata used to build the mirror path.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task SyncToOutputAsync(string cachePath, DownloadSlice slice, CancellationToken cancellationToken)
     {
         if (_outputRoot is null)

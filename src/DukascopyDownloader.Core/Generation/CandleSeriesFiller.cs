@@ -10,6 +10,10 @@ internal static class CandleSeriesFiller
     /// Fills missing intervals with flat, zero-volume candles when IncludeInactivePeriods is enabled.
     /// Leaves the original sequence unchanged otherwise.
     /// </summary>
+    /// <param name="candles">Existing candle series (must be ordered by LocalStart).</param>
+    /// <param name="options">Download options controlling the date range and include-inactive flag.</param>
+    /// <param name="timeZone">Timezone used to align buckets.</param>
+    /// <returns>Original sequence or a gap-filled sequence depending on <see cref="DownloadOptions.IncludeInactivePeriods"/>.</returns>
     public static IReadOnlyList<CandleRecord> IncludeInactivePeriods(
         IReadOnlyList<CandleRecord> candles,
         DownloadOptions options,

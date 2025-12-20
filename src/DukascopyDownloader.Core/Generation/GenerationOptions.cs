@@ -50,6 +50,20 @@ internal sealed class GenerationOptionsFactory
     /// <summary>
     /// Builds validated generation options from raw CLI inputs (timezone, date format, spread/volume settings, templates).
     /// </summary>
+    /// <param name="timeZoneValue">Timezone identifier (IANA/Windows); null for UTC.</param>
+    /// <param name="formatValue">Custom date format; null to use defaults (UTC ms or template default).</param>
+    /// <param name="template">Export template (e.g., MetaTrader5).</param>
+    /// <param name="tickSize">Explicit tick size/point value for spread calculation.</param>
+    /// <param name="spreadPoints">Fixed spread in points (fallback when no tick size).</param>
+    /// <param name="inferTickSize">Whether to infer tick size from tick deltas.</param>
+    /// <param name="minNonZeroDeltas">Minimum non-zero deltas to accept inference.</param>
+    /// <param name="spreadAggregation">Aggregation mode for spreads per candle.</param>
+    /// <param name="includeSpread">Whether to append spread column for non-template exports.</param>
+    /// <param name="includeVolume">Whether to include volume column for non-template exports.</param>
+    /// <param name="fixedVolume">Optional fixed volume per candle.</param>
+    /// <param name="options">Output generation options when successful.</param>
+    /// <param name="error">Error message when validation fails.</param>
+    /// <returns>True when options are valid; otherwise false with an error message.</returns>
     public bool TryCreate(
         string? timeZoneValue,
         string? formatValue,

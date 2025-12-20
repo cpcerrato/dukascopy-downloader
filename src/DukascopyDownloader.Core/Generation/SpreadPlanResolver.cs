@@ -9,6 +9,11 @@ internal static class SpreadPlanResolver
     /// Resolves how spreads will be produced for candle export: from explicit tick size, inferred tick size, or fixed spread points.
     /// Emits warnings/errors via logger when inference is insufficient.
     /// </summary>
+    /// <param name="ticks">Ticks available for inference (may be empty).</param>
+    /// <param name="generation">Generation options indicating tick-size/inference/fixed spread preferences.</param>
+    /// <param name="timeframe">Target timeframe for export.</param>
+    /// <param name="logger">Logger used to emit warnings or errors.</param>
+    /// <returns>Spread plan describing mode, tick size (when applicable), and fixed spread fallback.</returns>
     public static SpreadPlan Resolve(
         IReadOnlyList<TickRecord> ticks,
         GenerationOptions generation,

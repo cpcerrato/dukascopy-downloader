@@ -9,6 +9,10 @@ internal static class CandleAggregator
     /// <summary>
     /// Aggregates tick records into 1-second candles using ask/bid for OHLC and counting ticks as volume.
     /// </summary>
+    /// <param name="ticks">Tick records to aggregate.</param>
+    /// <param name="timeZone">Target timezone for candle start alignment.</param>
+    /// <param name="pipValue">Price increment (point value) used for spread calculation in seconds aggregation.</param>
+    /// <returns>List of second candles aligned to the provided timezone.</returns>
     public static IReadOnlyList<CandleRecord> AggregateSeconds(IEnumerable<TickRecord> ticks, TimeZoneInfo timeZone, decimal pipValue)
     {
         var buckets = new SortedDictionary<DateTimeOffset, CandleAccumulator>();
@@ -29,6 +33,10 @@ internal static class CandleAggregator
     /// <summary>
     /// Aggregates minute BI5 candles into the requested timeframe, dropping zero-volume bars.
     /// </summary>
+    /// <param name="minutes">Minute candles from BI5.</param>
+    /// <param name="timeframe">Target timeframe (>= m1).</param>
+    /// <param name="timeZone">Target timezone for bucket alignment.</param>
+    /// <returns>Aggregated candles, excluding zero-volume entries.</returns>
     public static IReadOnlyList<CandleRecord> AggregateMinutes(IEnumerable<MinuteRecord> minutes, DukascopyTimeframe timeframe, TimeZoneInfo timeZone)
     {
         var buckets = new SortedDictionary<DateTimeOffset, CandleAccumulator>();

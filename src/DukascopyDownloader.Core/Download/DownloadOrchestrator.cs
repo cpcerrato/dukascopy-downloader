@@ -48,8 +48,11 @@ internal sealed class DownloadOrchestrator
     /// <summary>
     /// Executes the download pipeline: plans slices, downloads with retries and rate-limit handling,
     /// verifies BI5 integrity, mirrors to output if configured, and returns a summary.
-    /// Throws <see cref="DownloadException"/> when any slice exhausts retries.
     /// </summary>
+    /// <param name="options">Download settings (instrument, range, cache, concurrency, retry/rate-limit policy).</param>
+    /// <param name="cancellationToken">Cancellation token to abort in-flight work.</param>
+    /// <returns>Summary of the run: totals, cache hits, failures, elapsed time.</returns>
+    /// <exception cref="DownloadException">Thrown when one or more slices exhaust retries or a fatal error occurs.</exception>
     public async Task<DownloadSummary> ExecuteAsync(DownloadOptions options, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();

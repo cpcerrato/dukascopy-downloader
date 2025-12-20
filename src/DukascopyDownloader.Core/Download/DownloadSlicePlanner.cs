@@ -6,6 +6,8 @@ internal static class DownloadSlicePlanner
     /// Builds the list of BI5 slices required to cover the requested range and timeframe.
     /// Tick feeds are hourly; minute feeds are daily.
     /// </summary>
+    /// <param name="options">Download options describing the instrument, timeframe, and date range.</param>
+    /// <returns>Enumerable of <see cref="DownloadSlice"/> objects covering the requested range.</returns>
     public static IEnumerable<DownloadSlice> Build(DownloadOptions options)
     {
         var feedKind = options.Timeframe.GetFeedKind();
