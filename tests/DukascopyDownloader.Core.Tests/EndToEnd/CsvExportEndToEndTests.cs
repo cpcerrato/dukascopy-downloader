@@ -35,7 +35,7 @@ public sealed class CsvExportEndToEndTests : IDisposable
         var generator = new CsvGenerator(NullLoggerFactory.Instance.CreateLogger<CsvGenerator>(), logger);
         var generation = new GenerationOptions(TimeZoneInfo.Utc, "yyyy-MM-dd HH:mm:ss");
 
-        await generator.GenerateAsync(download, generation, CancellationToken.None);
+        await generator.GenerateAsync(download, generation, download.Timeframe, CancellationToken.None);
 
         var exportPath = Path.Combine(exportRoot, "EURUSD_d1_20250114_20250116.csv");
         Assert.True(File.Exists(exportPath));

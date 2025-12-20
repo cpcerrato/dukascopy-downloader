@@ -78,12 +78,12 @@ Holds download configuration:
 `Median` (default), `Min`, `Mean`, `Last` – used by `AggregateSpreads`.
 
 ### `class CsvGenerator`
-- `Task GenerateAsync(DownloadOptions, GenerationOptions, CancellationToken)` – loads cached BI5, aggregates to timeframe, applies spread/volume rules, writes CSV with progress.
+- `Task GenerateAsync(DownloadOptions, GenerationOptions, DukascopyTimeframe targetTimeframe, CancellationToken)` – loads cached BI5/ticks, aggregates to target timeframe, applies spread/volume rules, writes CSV with progress.
 - MT5 template: headerless, timestamp `yyyy.MM.dd HH:mm:ss.fff` for ticks, sparse bid/ask (only when changed), empty last/volume for ticks; candles include tickVolume, volume=0, spread in points.
 - Default template: headers, Unix ms timestamps unless a format/timezone is set.
 
 ### `record GenerationOptions`
-- `TimeZone` (`TimeZoneInfo`), `DateFormat` (`string?`), `IncludeHeader` (`bool`), `Template` (`ExportTemplate`), `TickSize` (`decimal?`), `SpreadPoints` (`int?`), `InferTickSize` (`bool`), `MinNonZeroDeltas` (`int`), `SpreadAggregation`, `IncludeSpread` (`bool`), `IncludeVolume` (`bool`), `FixedVolume` (`int?`).
+- `TimeZone` (`TimeZoneInfo`), `DateFormat` (`string?`), `IncludeHeader` (`bool`), `Template` (`ExportTemplate`), `TickSize` (`decimal?`), `SpreadPoints` (`int?`), `InferTickSize` (`bool`), `MinNonZeroDeltas` (`int`), `SpreadAggregation`, `IncludeSpread` (`bool`), `IncludeVolume` (`bool`), `FixedVolume` (`int?`), `PreferTicks` (`bool`).
 - `HasCustomSettings` helper.
 
 ### `class GenerationOptionsFactory`

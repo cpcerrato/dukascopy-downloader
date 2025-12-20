@@ -51,6 +51,7 @@ dukascopy-downloader --instrument EURUSD --from 2024-01-01 --to 2024-01-08 \
   --timeframe m1 --export-template mt5 --spread-points 10 --timezone "America/New_York" \
   --output ./mt5-bars
 ```
+Tip: add `--prefer-ticks` to build bars from tick data (downloads ticks if they aren’t cached), enabling tick-based spread and tickVolume calculations.
 
 ## Tests
 

@@ -57,15 +57,22 @@ internal static class Program
             PrintOptionsSummary(logger, options);
             var swTotal = Stopwatch.StartNew();
 
+            var targetTimeframe = options.Download.Timeframe;
+            var downloadForRun = options.Download;
+            if (options.Generation.PreferTicks && targetTimeframe != DukascopyTimeframe.Tick)
+            {
+                downloadForRun = options.Download with { Timeframe = DukascopyTimeframe.Tick };
+            }
+
             var swDownload = Stopwatch.StartNew();
-            var downloadSummary = await downloader.ExecuteAsync(options.Download, cts.Token);
+            var downloadSummary = await downloader.ExecuteAsync(downloadForRun, cts.Token);
             swDownload.Stop();
 
             var generationElapsed = TimeSpan.Zero;
             if (!options.DownloadOnly)
             {
                 var swGeneration = Stopwatch.StartNew();
-                await generator.GenerateAsync(options.Download, options.Generation, cts.Token);
+                await generator.GenerateAsync(downloadForRun, options.Generation, targetTimeframe, cts.Token);
                 swGeneration.Stop();
                 generationElapsed = swGeneration.Elapsed;
             }
@@ -110,9 +117,12 @@ internal static class Program
             : "UTC (Unix ms)";
         var template = generation.Template != ExportTemplate.None ? $"Template: {generation.Template}" : "Template: none";
         var mode = options.DownloadOnly ? "Mode: download-only (CSV skipped)" : "Mode: download + CSV";
+        var preferTicks = generation.PreferTicks && download.Timeframe != DukascopyTimeframe.Tick
+            ? "Prefer ticks: yes (bars aggregated from tick feed)"
+            : "Prefer ticks: no";
 
         logger.LogInformation($"Instrument: {download.Instrument}, Timeframe: {tf}, Dates: {download.FromUtc:yyyy-MM-dd}..{toInclusive:yyyy-MM-dd}, Timestamps: {tsDescription}");
         logger.LogInformation($"Cache: {download.CacheRoot}, Output: {(string.IsNullOrWhiteSpace(download.OutputDirectory) ? "cwd" : download.OutputDirectory)}");
-        logger.LogInformation($"Concurrency: {download.Concurrency}, Retries: {download.MaxRetries}, Rate-limit pause: {download.RateLimitPause.TotalSeconds:F0}s x{download.RateLimitRetryLimit}, {template}, {mode}");
+        logger.LogInformation($"Concurrency: {download.Concurrency}, Retries: {download.MaxRetries}, Rate-limit pause: {download.RateLimitPause.TotalSeconds:F0}s x{download.RateLimitRetryLimit}, {template}, {mode}, {preferTicks}");
     }
 }

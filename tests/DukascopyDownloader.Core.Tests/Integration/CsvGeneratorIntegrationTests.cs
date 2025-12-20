@@ -29,7 +29,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         var generator = new CsvGenerator(NullLoggerFactory.Instance.CreateLogger<CsvGenerator>(), new TestLogger());
         var generation = new GenerationOptions(TimeZoneInfo.Utc, "yyyy-MM-dd HH:mm:ss");
 
-        await generator.GenerateAsync(download, generation, CancellationToken.None);
+        await generator.GenerateAsync(download, generation, download.Timeframe, CancellationToken.None);
 
         var exportPath = Path.Combine(exportRoot, "EURUSD_d1_20250114_20250114.csv");
         Assert.True(File.Exists(exportPath));
@@ -64,7 +64,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         Directory.SetCurrentDirectory(workDir);
         try
         {
-            await generator.GenerateAsync(download, generation, CancellationToken.None);
+            await generator.GenerateAsync(download, generation, download.Timeframe, CancellationToken.None);
         }
         finally
         {
@@ -95,8 +95,8 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         var tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var tzGeneration = new GenerationOptions(tz, "yyyy.MM.dd HH:mm:ss");
 
-        await generator.GenerateAsync(utcDownload, utcGeneration, CancellationToken.None);
-        await generator.GenerateAsync(tzDownload, tzGeneration, CancellationToken.None);
+        await generator.GenerateAsync(utcDownload, utcGeneration, utcDownload.Timeframe, CancellationToken.None);
+        await generator.GenerateAsync(tzDownload, tzGeneration, tzDownload.Timeframe, CancellationToken.None);
 
         var utcPath = Directory.GetFiles(utcDownload.OutputDirectory!, "*.csv").Single();
         var tzPath = Directory.GetFiles(tzDownload.OutputDirectory!, "*.csv").Single();
@@ -128,7 +128,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         var utcDownload = CreateTickOptions(start, end, outputRoot: Path.Combine(_cacheRoot, "utc-export"));
         var utcGeneration = new GenerationOptions(TimeZoneInfo.Utc, null);
 
-        await generator.GenerateAsync(utcDownload, utcGeneration, CancellationToken.None);
+        await generator.GenerateAsync(utcDownload, utcGeneration, utcDownload.Timeframe, CancellationToken.None);
         var utcPath = Directory.GetFiles(utcDownload.OutputDirectory!, "*.csv").Single();
 
         var lines = File.ReadAllLines(utcPath);
@@ -151,7 +151,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         var mt5Generation = new GenerationOptions(tz, "yyyy.MM.dd HH:mm:ss.fff", false, ExportTemplate.MetaTrader5, SpreadPoints: 1);
         var download = CreateTickOptions(start, end, outputRoot: Path.Combine(_cacheRoot, "mt5-export"));
 
-        await generator.GenerateAsync(download, mt5Generation, CancellationToken.None);
+        await generator.GenerateAsync(download, mt5Generation, download.Timeframe, CancellationToken.None);
         var path = Directory.GetFiles(download.OutputDirectory!, "*.csv").Single();
         var lines = File.ReadAllLines(path);
 
@@ -185,7 +185,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         var tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var generation = new GenerationOptions(tz, "yyyy.MM.dd HH:mm:ss.fff", false, ExportTemplate.MetaTrader5, SpreadPoints: 1);
 
-        await generator.GenerateAsync(download, generation, CancellationToken.None);
+        await generator.GenerateAsync(download, generation, download.Timeframe, CancellationToken.None);
 
         var exportPath = Directory.GetFiles(exportRoot, "*.csv").Single();
         var lines = File.ReadAllLines(exportPath);
@@ -213,7 +213,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
 
         var generation = new GenerationOptions(TimeZoneInfo.Utc, "yyyy-MM-dd HH:mm:ss");
 
-        await generator.GenerateAsync(download, generation, CancellationToken.None);
+        await generator.GenerateAsync(download, generation, download.Timeframe, CancellationToken.None);
 
         var exportPath = Directory.GetFiles(download.OutputDirectory!, "*.csv").Single();
         var lines = File.ReadAllLines(exportPath);
@@ -236,7 +236,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         var tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var generation = new GenerationOptions(tz, "yyyy-MM-dd HH:mm:ss");
 
-        await generator.GenerateAsync(download, generation, CancellationToken.None);
+        await generator.GenerateAsync(download, generation, download.Timeframe, CancellationToken.None);
 
         var exportPath = Path.Combine(exportRoot, "EURUSD_d1_20250114_20250114.csv");
         Assert.True(File.Exists(exportPath));

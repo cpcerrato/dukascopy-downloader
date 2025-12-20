@@ -39,6 +39,7 @@ internal static class UsagePrinter
         Console.WriteLine("      --fixed-volume         Fixed volume value for candles (overrides calculated tick count).");
         Console.WriteLine("      --include-spread       Append spread column to candle exports (non-MT5). MT5 template enables it automatically.");
         Console.WriteLine("      --include-inactive     Fill closed-market intervals with flat candles (0 volume).");
+        Console.WriteLine("      --prefer-ticks         Build bars from tick data (downloads tick feed if needed); enables spread/tick volume calculation from ticks.");
         Console.WriteLine();
         Console.WriteLine("General:");
         Console.WriteLine("      --verbose              Verbose logging.");

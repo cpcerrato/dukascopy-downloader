@@ -53,7 +53,10 @@ internal sealed class ConsoleLogger : ILogger, IProgress<DownloadProgressSnapsho
             var message = FormatDownloadSnapshot(snapshot, NextSpinner());
             var padded = PadAndClamp(message);
             _progressActive = true;
+            var prev = Console.ForegroundColor;
+            Console.ForegroundColor = ConsoleColor.Cyan;
             Console.Write("\r" + padded);
+            Console.ForegroundColor = prev;
             if (snapshot.IsFinal)
             {
                 Console.WriteLine();
@@ -70,7 +73,10 @@ internal sealed class ConsoleLogger : ILogger, IProgress<DownloadProgressSnapsho
             var message = FormatGenerationSnapshot(snapshot, NextSpinner());
             var padded = PadAndClamp(message);
             _progressActive = true;
+            var prev = Console.ForegroundColor;
+            Console.ForegroundColor = ConsoleColor.Cyan;
             Console.Write("\r" + padded);
+            Console.ForegroundColor = prev;
             if (snapshot.IsFinal)
             {
                 Console.WriteLine();

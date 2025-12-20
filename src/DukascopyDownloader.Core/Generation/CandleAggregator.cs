@@ -57,6 +57,29 @@ internal static class CandleAggregator
             .ToList();
     }
 
+    /// <summary>
+    /// Aggregates tick records directly into the requested timeframe (>= m1), counting ticks as volume.
+    /// </summary>
+    public static IReadOnlyList<CandleRecord> AggregateTicks(IEnumerable<TickRecord> ticks, DukascopyTimeframe timeframe, TimeZoneInfo timeZone, decimal tickSize)
+    {
+        var buckets = new SortedDictionary<DateTimeOffset, CandleAccumulator>();
+        foreach (var tick in ticks)
+        {
+            var bucketStart = AlignToTimeframe(tick.TimestampUtc, timeframe, timeZone);
+            if (!buckets.TryGetValue(bucketStart, out var acc))
+            {
+                acc = new CandleAccumulator(bucketStart, tickSize);
+                buckets[bucketStart] = acc;
+            }
+            acc.AddTick(tick);
+        }
+
+        return buckets.Values
+            .Select(acc => acc.Build())
+            .Where(c => c.Volume > 0)
+            .ToList();
+    }
+
     internal static DateTimeOffset AlignToSecond(DateTimeOffset timestampUtc, TimeZoneInfo timeZone)
     {
         var local = TimeZoneInfo.ConvertTime(timestampUtc, timeZone);

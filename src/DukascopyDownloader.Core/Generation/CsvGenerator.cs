@@ -22,54 +22,105 @@ internal sealed class CsvGenerator
         _progress = progress ?? NullProgress<GenerationProgressSnapshot>.Instance;
     }
 
-    public async Task GenerateAsync(DownloadOptions download, GenerationOptions generation, CancellationToken cancellationToken)
+    public async Task GenerateAsync(DownloadOptions download, GenerationOptions generation, DukascopyTimeframe targetTimeframe, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         // Tick timeframe: write ticks directly from cache.
-        if (download.Timeframe == DukascopyTimeframe.Tick)
+        if (targetTimeframe == DukascopyTimeframe.Tick)
         {
             await WriteTickCsvAsync(download, generation, cancellationToken);
             return;
         }
 
         var needsSpread = generation.Template == ExportTemplate.MetaTrader5 || generation.IncludeSpread;
+        var preferTicks = generation.PreferTicks;
 
-        if (download.Timeframe == DukascopyTimeframe.Second1)
+        if (targetTimeframe == DukascopyTimeframe.Second1)
         {
-            var ticks = await LoadTicksAsync(download, cancellationToken, showProgress: true, phase: "Loading ticks");
+            var tickDownload = download.Timeframe == DukascopyTimeframe.Tick ? download : download with { Timeframe = DukascopyTimeframe.Tick };
+            var ticks = await LoadTicksAsync(tickDownload, cancellationToken, showProgress: true, phase: "Loading ticks");
             if (ticks.Count == 0)
             {
-                 _logger.LogWarning("No tick data available for the requested range; skipping CSV export.");
-                return;
+                throw new InvalidOperationException("No tick data available to build 1-second candles. Use --prefer-ticks to download ticks or ensure ticks are cached.");
             }
 
-            IReadOnlyDictionary<DateTimeOffset, int>? spreads = null;
-            int? fixedSpread = null;
+            IReadOnlyDictionary<DateTimeOffset, int>? secondSpreads = null;
+            int? secondFixedSpread = null;
+            var baseTickSize = generation.TickSize ?? 0.0001m;
             if (needsSpread)
             {
                 var spreadPlan = SpreadPlanResolver.Resolve(ticks, generation, download.Timeframe, _logger);
-                spreads = spreadPlan.Mode == SpreadMode.FromTicks
+                secondSpreads = spreadPlan.Mode == SpreadMode.FromTicks
                     ? SpreadCalculator.AggregateSpreads(ticks, download.Timeframe, generation.TimeZone, spreadPlan.TickSize!.Value, generation.SpreadAggregation)
                     : null;
-                fixedSpread = spreadPlan.FixedSpreadPoints;
+                secondFixedSpread = spreadPlan.FixedSpreadPoints;
+                if (spreadPlan.TickSize.HasValue)
+                {
+                    baseTickSize = spreadPlan.TickSize.Value;
+                }
             }
 
-            var baseTickSize = generation.TickSize ?? 0.0001m;
             var candles = CandleAggregator.AggregateSeconds(ticks, generation.TimeZone, baseTickSize);
             candles = CandleSeriesFiller.IncludeInactivePeriods(candles, download, generation.TimeZone);
             if (needsSpread)
             {
-                candles = ApplySpreads(candles, spreads, fixedSpread);
+                candles = ApplySpreads(candles, secondSpreads, secondFixedSpread);
             }
-            await WriteCandleCsvAsync(candles, download, generation, cancellationToken);
+            await WriteCandleCsvAsync(candles, download, generation, targetTimeframe, cancellationToken);
+            return;
+        }
+
+        // Prefer ticks: aggregate candles from tick stream, otherwise use Dukascopy minute feed.
+        if (preferTicks)
+        {
+            var tickDownload = download.Timeframe == DukascopyTimeframe.Tick ? download : download with { Timeframe = DukascopyTimeframe.Tick };
+            var ticks = await LoadTicksAsync(tickDownload, cancellationToken, showProgress: true, phase: "Loading ticks");
+            if (ticks.Count == 0)
+            {
+                throw new InvalidOperationException("Prefer-ticks requested but no tick data available. Ensure ticks are cached or let the downloader fetch ticks for this range.");
+            }
+
+            SpreadPlan? spreadPlanTicks = null;
+
+            if (needsSpread || generation.IncludeVolume)
+            {
+                if (generation.TickSize.HasValue || generation.InferTickSize)
+                {
+                    spreadPlanTicks = SpreadPlanResolver.Resolve(ticks, generation, targetTimeframe, _logger);
+                }
+                else if (generation.SpreadPoints.HasValue)
+                {
+                    spreadPlanTicks = SpreadPlan.Fixed(generation.SpreadPoints.Value);
+                }
+            }
+
+            var pip = spreadPlanTicks?.TickSize ?? generation.TickSize ?? 0.0001m;
+            var aggregated = CandleAggregator.AggregateTicks(ticks, targetTimeframe, generation.TimeZone, pip);
+            aggregated = CandleSeriesFiller.IncludeInactivePeriods(aggregated, download with { Timeframe = targetTimeframe }, generation.TimeZone);
+
+            IReadOnlyDictionary<DateTimeOffset, int>? volumeCounts = null;
+            if (generation.IncludeVolume && generation.FixedVolume is null)
+            {
+                volumeCounts = CountVolumes(ticks, targetTimeframe, generation.TimeZone);
+            }
+
+            if (needsSpread && spreadPlanTicks is not null)
+            {
+                var tickSpreadsAgg = spreadPlanTicks.Value.Mode == SpreadMode.FromTicks
+                    ? SpreadCalculator.AggregateSpreads(ticks, targetTimeframe, generation.TimeZone, spreadPlanTicks.Value.TickSize!.Value, generation.SpreadAggregation)
+                    : null;
+                aggregated = ApplySpreads(aggregated, tickSpreadsAgg, spreadPlanTicks.Value.FixedSpreadPoints);
+            }
+
+            await WriteCandleCsvAsync(aggregated, download, generation, targetTimeframe, cancellationToken, volumeCounts);
             return;
         }
 
         var minutes = await LoadMinutesAsync(download, cancellationToken, showProgress: true, phase: "Loading minutes");
         if (minutes.Count == 0)
         {
-             _logger.LogWarning("No minute data available for the requested range; skipping CSV export.");
+            _logger.LogWarning("No minute data available for the requested range; skipping CSV export.");
             return;
         }
 
@@ -83,7 +134,7 @@ internal sealed class CsvGenerator
                 ticksForSpread = await LoadTicksAsync(download with { Timeframe = DukascopyTimeframe.Tick }, cancellationToken, showProgress: true, phase: "Loading ticks (spreads)");
             }
 
-            spreadPlanMinutes = SpreadPlanResolver.Resolve(ticksForSpread, generation, download.Timeframe, _logger);
+            spreadPlanMinutes = SpreadPlanResolver.Resolve(ticksForSpread, generation, targetTimeframe, _logger);
         }
         else if (needVolumeCounts)
         {
@@ -91,25 +142,25 @@ internal sealed class CsvGenerator
             ticksForSpread = await LoadTicksAsync(download with { Timeframe = DukascopyTimeframe.Tick }, cancellationToken, showProgress: true, phase: "Loading ticks (volume)");
         }
 
-        var aggregated = CandleAggregator.AggregateMinutes(minutes, download.Timeframe, generation.TimeZone);
-        aggregated = CandleSeriesFiller.IncludeInactivePeriods(aggregated, download, generation.TimeZone);
-        var volumeCounts = needVolumeCounts && ticksForSpread.Count > 0
-            ? CountVolumes(ticksForSpread, download.Timeframe, generation.TimeZone)
+        var aggregatedMinutes = CandleAggregator.AggregateMinutes(minutes, targetTimeframe, generation.TimeZone);
+        aggregatedMinutes = CandleSeriesFiller.IncludeInactivePeriods(aggregatedMinutes, download with { Timeframe = targetTimeframe }, generation.TimeZone);
+        var volumeCountsMinutes = needVolumeCounts && ticksForSpread.Count > 0
+            ? CountVolumes(ticksForSpread, targetTimeframe, generation.TimeZone)
             : null;
         if (needsSpread && spreadPlanMinutes is not null)
         {
             var spreads = spreadPlanMinutes.Value.Mode == SpreadMode.FromTicks && ticksForSpread.Count > 0
-                ? SpreadCalculator.AggregateSpreads(ticksForSpread, download.Timeframe, generation.TimeZone, spreadPlanMinutes.Value.TickSize!.Value, generation.SpreadAggregation)
+                ? SpreadCalculator.AggregateSpreads(ticksForSpread, targetTimeframe, generation.TimeZone, spreadPlanMinutes.Value.TickSize!.Value, generation.SpreadAggregation)
                 : null;
 
-            aggregated = ApplySpreads(aggregated, spreads, spreadPlanMinutes.Value.FixedSpreadPoints);
+            aggregatedMinutes = ApplySpreads(aggregatedMinutes, spreads, spreadPlanMinutes.Value.FixedSpreadPoints);
         }
-        if (needVolumeCounts && volumeCounts is null && generation.FixedVolume is null)
+        if (needVolumeCounts && volumeCountsMinutes is null && generation.FixedVolume is null)
         {
-             _logger.LogWarning("Volume counts unavailable (no ticks in cache); using source candle volume.");
+            _logger.LogWarning("Volume counts unavailable (no ticks in cache); using source candle volume.");
         }
 
-        await WriteCandleCsvAsync(aggregated, download, generation, cancellationToken, volumeCounts);
+        await WriteCandleCsvAsync(aggregatedMinutes, download, generation, targetTimeframe, cancellationToken, volumeCountsMinutes);
     }
 
     private async Task<IReadOnlyList<TickRecord>> LoadTicksAsync(
@@ -270,7 +321,7 @@ internal sealed class CsvGenerator
             return;
         }
 
-        var exportPath = ResolveExportPath(download);
+        var exportPath = ResolveExportPath(download, targetTimeframe: download.Timeframe);
         var rowsWritten = 0;
         RenderGenerationProgress(totalSlices, processedSlices, "Writing ticks", force: true);
 
@@ -413,11 +464,12 @@ internal sealed class CsvGenerator
         IReadOnlyList<CandleRecord> candles,
         DownloadOptions download,
         GenerationOptions generation,
+        DukascopyTimeframe targetTimeframe,
         CancellationToken cancellationToken,
         IReadOnlyDictionary<DateTimeOffset, int>? volumeCounts = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var path = ResolveExportPath(download);
+        var path = ResolveExportPath(download, targetTimeframe);
         var rowsWritten = 0;
         var total = candles.Count;
 
@@ -576,14 +628,14 @@ internal sealed class CsvGenerator
         return result;
     }
 
-    private string ResolveExportPath(DownloadOptions download)
+    private string ResolveExportPath(DownloadOptions download, DukascopyTimeframe targetTimeframe)
     {
         var exportsFolder = string.IsNullOrWhiteSpace(download.OutputDirectory)
             ? Environment.CurrentDirectory
             : download.OutputDirectory!;
         Directory.CreateDirectory(exportsFolder);
         var actualEnd = download.ToUtc.AddDays(-1);
-        var fileName = $"{download.Instrument}_{download.Timeframe.ToDisplayString()}_{download.FromUtc:yyyyMMdd}_{actualEnd:yyyyMMdd}.csv";
+        var fileName = $"{download.Instrument}_{targetTimeframe.ToDisplayString()}_{download.FromUtc:yyyyMMdd}_{actualEnd:yyyyMMdd}.csv";
         return Path.Combine(exportsFolder, fileName);
     }
 

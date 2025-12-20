@@ -65,6 +65,7 @@ internal sealed class CliParser
         ["include-inactive"] = "include-inactive",
         ["fill-inactive"] = "include-inactive",
         ["fill-gaps"] = "include-inactive",
+        ["prefer-ticks"] = "prefer-ticks",
         ["verbose"] = "verbose",
         ["v"] = "verbose",
         ["version"] = "version",
@@ -85,6 +86,7 @@ internal sealed class CliParser
         "version",
         "download-only",
         "infer-tick-size",
+        "prefer-ticks",
         "help"
     };
 
@@ -251,6 +253,7 @@ internal sealed class CliParser
             };
         }
         var includeSpread = normalized.ContainsKey("include-spread");
+        var preferTicks = normalized.ContainsKey("prefer-ticks");
         var fixedVolume = TryParsePositiveIntAllowNull(normalized, "fixed-volume", minValue: 0, out error);
         if (error is not null)
         {
@@ -279,6 +282,7 @@ internal sealed class CliParser
                 includeSpread,
                 includeVolume,
                 fixedVolume,
+                preferTicks,
                 out var generationOptions,
                 out error))
         {

@@ -103,6 +103,7 @@ dukascopy-downloader \
 | `--download-only` | Only download/verify BI5 files (skip CSV generation). |
 | `-c, --concurrency` | Parallel downloads (default: CPU cores − 1). |
 | `--export-template` | Preset output format; `mt5` removes headers, uses `yyyy.MM.dd HH:mm:ss.fff`, and sparsifies tick columns. |
+| `--prefer-ticks` | When exporting bars, aggregate directly from tick data (downloads tick feed if needed). Enables tick-based spread/tickVolume; may take longer. |
 | `--include-spread` | Append a `spread` column to candle exports (non-MT5). MT5 template enables it automatically. |
 | `--tick-size`, `--point` | Tick size/point value for spread calculation (bars). |
 | `--infer-tick-size` | Infer tick size from tick deltas (requires cached ticks). |
@@ -131,7 +132,8 @@ dukascopy-downloader \
     - `tickVolume`: number of ticks in the candle (or `--fixed-volume` when supplied).  
     - `volume`: always `0` for FX/CFDs (MT5 “real volume” is unknown).  
   - `spread`: aggregated from tick bid/ask; fallback is `1` point if no tick data is available for the candle.  
-  - Recommended: use `--infer-tick-size` (or `--tick-size 0.00001` for 5-digit FX) and import the generated tick CSV into your MT5 custom symbol. MT5 will rebuild bars/spreads internally, avoiding guesses on our side.
+- Recommended: use `--infer-tick-size` (or `--tick-size 0.00001` for 5-digit FX) and import the generated tick CSV into your MT5 custom symbol. MT5 will rebuild bars/spreads internally, avoiding guesses on our side.
+  - `--prefer-ticks` builds MT5 bars from the tick stream (downloads ticks if needed); otherwise bars come from Dukascopy M1 feed.
 
 Without a template, CSVs include headers and use:  
 Ticks: `timestamp,ask,bid,askVolume,bidVolume`.  
@@ -157,6 +159,7 @@ By default `timestamp` is Unix ms (UTC) unless `--timezone/--date-format` is pro
 ### Notes
 
 - `--from` / `--to` use **inclusive** UTC calendar dates (format `YYYY-MM-DD`). Internally, downloads run until the end of the `--to` day.
+- `--prefer-ticks` will download tick data for bar exports when missing; expect longer runs for large ranges.
 - Cache writes always occur; reads are skipped when `--no-cache` is supplied or when `--force` is used to bypass existing entries.
 - CSV exports are saved under `cache-root/exports/{instrument}_{timeframe}_{from}_{to}.csv`.
 - Timezone/date-format options affect only the CSV timestamps; the downloader always uses UTC for fetching.

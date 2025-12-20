@@ -28,7 +28,8 @@ internal sealed record GenerationOptions(
     SpreadAggregation SpreadAggregation = SpreadAggregation.Median,
     bool IncludeSpread = false,
     bool IncludeVolume = true,
-    int? FixedVolume = null)
+    int? FixedVolume = null,
+    bool PreferTicks = false)
 {
     /// <summary>
     /// Indicates whether non-default timestamp or template settings are in use.
@@ -42,7 +43,8 @@ internal sealed record GenerationOptions(
         InferTickSize ||
         IncludeSpread ||
         !IncludeVolume ||
-        FixedVolume.HasValue;
+        FixedVolume.HasValue ||
+        PreferTicks;
 }
 
 internal sealed class GenerationOptionsFactory
@@ -76,6 +78,7 @@ internal sealed class GenerationOptionsFactory
         bool includeSpread,
         bool includeVolume,
         int? fixedVolume,
+        bool preferTicks,
         out GenerationOptions options,
         out string? error)
     {
@@ -124,7 +127,8 @@ internal sealed class GenerationOptionsFactory
             spreadAggregation,
             includeSpreadFlag,
             includeVolumeFlag,
-            fixedVolume);
+            fixedVolume,
+            preferTicks);
         error = null;
         return true;
     }
