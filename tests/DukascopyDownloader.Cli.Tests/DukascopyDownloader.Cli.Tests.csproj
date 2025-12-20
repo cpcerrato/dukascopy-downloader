@@ -5,6 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +21,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../src/DukascopyDownloader.Core/DukascopyDownloader.Core.csproj" />
+    <ProjectReference Include="..\\..\\src\\DukascopyDownloader.Cli\\DukascopyDownloader.Cli.csproj" />
+    <ProjectReference Include="..\\..\\src\\DukascopyDownloader.Core\\DukascopyDownloader.Core.csproj" />
   </ItemGroup>
 
 </Project>
