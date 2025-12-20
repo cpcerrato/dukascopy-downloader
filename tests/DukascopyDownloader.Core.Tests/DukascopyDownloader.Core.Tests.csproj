@@ -5,8 +5,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <IsTestProject>true</IsTestProject>
-    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,11 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../dukascopy-downloader.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Include="Cli/**/*.cs" />
+    <ProjectReference Include="../../DukascopyDownloader.Core.csproj" />
   </ItemGroup>
 
 </Project>
