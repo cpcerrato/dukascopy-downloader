@@ -2,6 +2,10 @@ namespace DukascopyDownloader.Download;
 
 internal static class DownloadSlicePlanner
 {
+    /// <summary>
+    /// Builds the list of BI5 slices required to cover the requested range and timeframe.
+    /// Tick feeds are hourly; minute feeds are daily.
+    /// </summary>
     public static IEnumerable<DownloadSlice> Build(DownloadOptions options)
     {
         var feedKind = options.Timeframe.GetFeedKind();

@@ -24,6 +24,7 @@ internal sealed class CsvGenerator
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Tick timeframe: write ticks directly from cache.
         if (download.Timeframe == DukascopyTimeframe.Tick)
         {
             await WriteTickCsvAsync(download, generation, cancellationToken);

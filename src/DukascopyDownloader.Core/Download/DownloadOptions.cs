@@ -60,6 +60,9 @@ internal sealed record DownloadOptions(
     TimeSpan RateLimitPause,
     int RateLimitRetryLimit)
 {
+    /// <summary>
+    /// Returns a short human-readable description of the download request.
+    /// </summary>
     public override string ToString() =>
         $"{Instrument} {Timeframe.ToDisplayString()} {FromUtc:yyyy-MM-dd}..{ToUtc:yyyy-MM-dd}";
 }

@@ -6,6 +6,10 @@ namespace DukascopyDownloader.Generation;
 
 internal static class CandleSeriesFiller
 {
+    /// <summary>
+    /// Fills missing intervals with flat, zero-volume candles when IncludeInactivePeriods is enabled.
+    /// Leaves the original sequence unchanged otherwise.
+    /// </summary>
     public static IReadOnlyList<CandleRecord> IncludeInactivePeriods(
         IReadOnlyList<CandleRecord> candles,
         DownloadOptions options,

@@ -45,6 +45,11 @@ internal sealed class DownloadOrchestrator
         _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("dukascopy-downloader", "1.0"));
     }
 
+    /// <summary>
+    /// Executes the download pipeline: plans slices, downloads with retries and rate-limit handling,
+    /// verifies BI5 integrity, mirrors to output if configured, and returns a summary.
+    /// Throws <see cref="DownloadException"/> when any slice exhausts retries.
+    /// </summary>
     public async Task<DownloadSummary> ExecuteAsync(DownloadOptions options, CancellationToken cancellationToken)
     {
         var sw = Stopwatch.StartNew();

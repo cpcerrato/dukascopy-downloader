@@ -30,6 +30,9 @@ internal sealed record GenerationOptions(
     bool IncludeVolume = true,
     int? FixedVolume = null)
 {
+    /// <summary>
+    /// Indicates whether non-default timestamp or template settings are in use.
+    /// </summary>
     public bool HasCustomSettings =>
         TimeZone != TimeZoneInfo.Utc ||
         !string.IsNullOrWhiteSpace(DateFormat) ||
@@ -44,6 +47,9 @@ internal sealed record GenerationOptions(
 
 internal sealed class GenerationOptionsFactory
 {
+    /// <summary>
+    /// Builds validated generation options from raw CLI inputs (timezone, date format, spread/volume settings, templates).
+    /// </summary>
     public bool TryCreate(
         string? timeZoneValue,
         string? formatValue,

@@ -8,6 +8,9 @@ internal static class SpreadCalculator
 {
     private const long Scale = 1_000_000_000L; // 1e9 to preserve decimal precision
 
+    /// <summary>
+    /// Infers tick size (point value) by computing the GCD of bid deltas. Returns null when insufficient deltas.
+    /// </summary>
     internal static decimal? InferTickSize(IEnumerable<TickRecord> ticks, int minNonZeroDeltas, out int nonZeroDeltas)
     {
         long gcd = 0;
@@ -47,6 +50,9 @@ internal static class SpreadCalculator
         return gcd / (decimal)Scale;
     }
 
+    /// <summary>
+    /// Computes spread-in-points per timeframe bucket using the provided tick size and aggregation mode.
+    /// </summary>
     internal static IReadOnlyDictionary<DateTimeOffset, int> AggregateSpreads(
         IEnumerable<TickRecord> ticks,
         DukascopyTimeframe timeframe,

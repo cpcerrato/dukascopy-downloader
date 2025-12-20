@@ -13,6 +13,9 @@ internal sealed class CacheManager
         _outputRoot = string.IsNullOrWhiteSpace(outputRoot) ? null : outputRoot;
     }
 
+    /// <summary>
+    /// Resolves the on-disk cache path for a given slice, creating intermediate directories.
+    /// </summary>
     public string ResolveCachePath(DownloadSlice slice)
     {
         var yearSegment = slice.Start.UtcDateTime.Year.ToString("D4", CultureInfo.InvariantCulture);
@@ -21,6 +24,9 @@ internal sealed class CacheManager
         return Path.Combine(folder, slice.CacheFileName);
     }
 
+    /// <summary>
+    /// Mirrors a verified cache file into the configured output directory (if any), skipping when already present.
+    /// </summary>
     public async Task SyncToOutputAsync(string cachePath, DownloadSlice slice, CancellationToken cancellationToken)
     {
         if (_outputRoot is null)

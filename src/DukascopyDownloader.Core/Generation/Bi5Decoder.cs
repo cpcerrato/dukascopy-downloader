@@ -8,6 +8,9 @@ internal static class Bi5Decoder
     private const int MinuteRecordSize = 24;
     private const decimal PriceScale = 100000m;
 
+    /// <summary>
+    /// Decodes a BI5 tick file into timestamped tick records using the provided slice start as the anchor.
+    /// </summary>
     public static IReadOnlyList<TickRecord> ReadTicks(string path, DateTimeOffset sliceStart)
     {
         using var fs = File.OpenRead(path);
@@ -24,6 +27,9 @@ internal static class Bi5Decoder
         return ParseTicks(lzma, sliceStart);
     }
 
+    /// <summary>
+    /// Decodes a BI5 minute file into minute records using the provided slice start as the anchor.
+    /// </summary>
     public static IReadOnlyList<MinuteRecord> ReadMinutes(string path, DateTimeOffset sliceStart)
     {
         using var fs = File.OpenRead(path);

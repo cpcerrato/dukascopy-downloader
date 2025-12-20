@@ -5,6 +5,10 @@ namespace DukascopyDownloader.Generation;
 
 internal static class SpreadPlanResolver
 {
+    /// <summary>
+    /// Resolves how spreads will be produced for candle export: from explicit tick size, inferred tick size, or fixed spread points.
+    /// Emits warnings/errors via logger when inference is insufficient.
+    /// </summary>
     public static SpreadPlan Resolve(
         IReadOnlyList<TickRecord> ticks,
         GenerationOptions generation,

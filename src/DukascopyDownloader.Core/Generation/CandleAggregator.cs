@@ -6,6 +6,9 @@ internal static class CandleAggregator
 {
     private const decimal DefaultPipValue = 0.0001m;
 
+    /// <summary>
+    /// Aggregates tick records into 1-second candles using ask/bid for OHLC and counting ticks as volume.
+    /// </summary>
     public static IReadOnlyList<CandleRecord> AggregateSeconds(IEnumerable<TickRecord> ticks, TimeZoneInfo timeZone, decimal pipValue)
     {
         var buckets = new SortedDictionary<DateTimeOffset, CandleAccumulator>();
@@ -23,6 +26,9 @@ internal static class CandleAggregator
         return buckets.Values.Select(acc => acc.Build()).ToList();
     }
 
+    /// <summary>
+    /// Aggregates minute BI5 candles into the requested timeframe, dropping zero-volume bars.
+    /// </summary>
     public static IReadOnlyList<CandleRecord> AggregateMinutes(IEnumerable<MinuteRecord> minutes, DukascopyTimeframe timeframe, TimeZoneInfo timeZone)
     {
         var buckets = new SortedDictionary<DateTimeOffset, CandleAccumulator>();
