@@ -2,6 +2,7 @@ using DukascopyDownloader.Cli;
 using DukascopyDownloader.Download;
 using DukascopyDownloader.Generation;
 using DukascopyDownloader.Logging;
+using DukascopyDownloader.Cli.Logging;
 using System.Diagnostics;
 
 namespace DukascopyDownloader;

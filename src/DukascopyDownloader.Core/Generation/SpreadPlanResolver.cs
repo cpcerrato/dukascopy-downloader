@@ -18,7 +18,7 @@ internal static class SpreadPlanResolver
         IReadOnlyList<TickRecord> ticks,
         GenerationOptions generation,
         DukascopyTimeframe timeframe,
-        ConsoleLogger logger)
+        ILogger logger)
     {
         if (!generation.IncludeSpread && generation.Template != ExportTemplate.MetaTrader5)
         {

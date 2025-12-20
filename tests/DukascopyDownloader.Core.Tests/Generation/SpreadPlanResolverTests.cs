@@ -9,7 +9,7 @@ namespace DukascopyDownloader.Tests.Generation;
 
 public class SpreadPlanResolverTests
 {
-    private static readonly ConsoleLogger Logger = new();
+    private static readonly ILogger Logger = new TestLogger();
 
     [Fact]
     public void Resolve_WithTickSize_UsesFromTicks()

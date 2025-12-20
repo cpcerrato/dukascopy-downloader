@@ -10,12 +10,12 @@ namespace DukascopyDownloader.Generation;
 
 internal sealed class CsvGenerator
 {
-    private readonly ConsoleLogger _logger;
+    private readonly ILogger _logger;
     private long _lastProgressTick;
     private int _spinnerIndex;
     private readonly char[] _spinner = new[] { '|', '/', '-', '\\' };
 
-    public CsvGenerator(ConsoleLogger logger)
+    public CsvGenerator(ILogger logger)
     {
         _logger = logger;
     }

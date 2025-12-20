@@ -72,7 +72,7 @@ Holds download configuration:
 - `IReadOnlyDictionary<DateTimeOffset,int> AggregateSpreads(IEnumerable<TickRecord>, DukascopyTimeframe, TimeZoneInfo, decimal tickSize, SpreadAggregation aggregation)` – computes per-bucket spreads in points.
 
 ### `class SpreadPlanResolver`
-- `SpreadPlan Resolve(IReadOnlyList<TickRecord> ticks, GenerationOptions generation, DukascopyTimeframe timeframe, ConsoleLogger logger)` – decides spread source: explicit tick size, inferred tick size, or fixed spread points (with warnings/error when inference insufficient).
+- `SpreadPlan Resolve(IReadOnlyList<TickRecord> ticks, GenerationOptions generation, DukascopyTimeframe timeframe, ILogger logger)` – decides spread source: explicit tick size, inferred tick size, or fixed spread points (with warnings/error when inference insufficient).
 
 ### `enum SpreadAggregation`
 `Median` (default), `Min`, `Mean`, `Last` – used by `AggregateSpreads`.
@@ -94,10 +94,10 @@ Holds download configuration:
 
 ## Logging
 
-### `class ConsoleLogger`
-- `Info`, `Success`, `Warn`, `Error`, `Verbose` – timestamped console output with color.
-- `Progress(string)`, `CompleteProgressLine()` – in-place progress updates (used by downloader/generator).
-- `VerboseEnabled` flag to control verbosity.
+### `interface ILogger`
+- `Info`, `Success`, `Warn`, `Error`, `Verbose` – basic logging; `VerboseEnabled` flag.
+- `Progress(string)`, `CompleteProgressLine()` – optional in-place progress updates (no-op when not implemented).
+  Console implementation lives in the CLI (`Logging/ConsoleLogger`); core consumers can inject their own logger.
 
 ## Typical programmatic flow
 

@@ -20,7 +20,7 @@ public class DownloadOrchestratorTests
         using var manifest = new FailureManifest(options.CacheRoot);
         var slice = DownloadSlicePlanner.Build(options).First();
         var handler = new FakeHttpMessageHandler(FakeHttpMessageHandler.Respond(HttpStatusCode.OK, Bi5TestSamples.TickBytes));
-        var orchestrator = new DownloadOrchestrator(new ConsoleLogger(), handler);
+        var orchestrator = new DownloadOrchestrator(new TestLogger(), handler);
         var job = new DownloadOrchestrator.DownloadJob(slice, 0, 0);
 
         try
@@ -48,7 +48,7 @@ public class DownloadOrchestratorTests
         var slice = DownloadSlicePlanner.Build(options).First();
         var handler = new FakeHttpMessageHandler(
             FakeHttpMessageHandler.Respond(HttpStatusCode.TooManyRequests, Array.Empty<byte>()));
-        var orchestrator = new DownloadOrchestrator(new ConsoleLogger(), handler);
+        var orchestrator = new DownloadOrchestrator(new TestLogger(), handler);
         var job = new DownloadOrchestrator.DownloadJob(slice, 0, 0);
 
         try
@@ -78,7 +78,7 @@ public class DownloadOrchestratorTests
         var handler = new FakeHttpMessageHandler(
             FakeHttpMessageHandler.Respond(HttpStatusCode.InternalServerError, Array.Empty<byte>()),
             FakeHttpMessageHandler.Respond(HttpStatusCode.InternalServerError, Array.Empty<byte>()));
-        var orchestrator = new DownloadOrchestrator(new ConsoleLogger(), handler);
+        var orchestrator = new DownloadOrchestrator(new TestLogger(), handler);
         var job = new DownloadOrchestrator.DownloadJob(slice, 0, 0);
 
         try

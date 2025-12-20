@@ -12,7 +12,7 @@ namespace DukascopyDownloader.Download;
 
 internal sealed class DownloadOrchestrator
 {
-    private readonly ConsoleLogger _logger;
+    private readonly ILogger _logger;
     private readonly HttpClient _httpClient;
     private readonly RateLimitGate _rateLimitGate = new();
     private long _lastProgressTick;
@@ -35,7 +35,7 @@ internal sealed class DownloadOrchestrator
         public static JobDecision Failed(Exception error) => new(JobDecisionKind.Failed, null, TimeSpan.Zero, error);
     }
 
-    public DownloadOrchestrator(ConsoleLogger logger, HttpMessageHandler? httpHandler = null)
+    public DownloadOrchestrator(ILogger logger, HttpMessageHandler? httpHandler = null)
     {
         _logger = logger;
         _httpClient = httpHandler is null

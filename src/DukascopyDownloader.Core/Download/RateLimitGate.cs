@@ -27,7 +27,7 @@ internal sealed class RateLimitGate
         }
     }
 
-    public void Trigger(TimeSpan pause, ConsoleLogger logger)
+    public void Trigger(TimeSpan pause, ILogger logger)
     {
         bool scheduled = false;
         DateTimeOffset resumeTime;
