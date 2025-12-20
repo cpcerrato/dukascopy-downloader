@@ -3,21 +3,23 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using DukascopyDownloader.Core.Logging;
+
 using DukascopyDownloader.Download;
-using DukascopyDownloader.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DukascopyDownloader.Generation;
 
 internal sealed class CsvGenerator
 {
-    private readonly ILogger _logger;
+    private readonly ILogger<CsvGenerator> _logger;
+    private readonly IProgress<GenerationProgressSnapshot> _progress;
     private long _lastProgressTick;
-    private int _spinnerIndex;
-    private readonly char[] _spinner = new[] { '|', '/', '-', '\\' };
 
-    public CsvGenerator(ILogger logger)
+    public CsvGenerator(ILogger<CsvGenerator> logger, IProgress<GenerationProgressSnapshot>? progress = null)
     {
         _logger = logger;
+        _progress = progress ?? NullProgress<GenerationProgressSnapshot>.Instance;
     }
 
     public async Task GenerateAsync(DownloadOptions download, GenerationOptions generation, CancellationToken cancellationToken)
@@ -38,7 +40,7 @@ internal sealed class CsvGenerator
             var ticks = await LoadTicksAsync(download, cancellationToken, showProgress: true, phase: "Loading ticks");
             if (ticks.Count == 0)
             {
-                _logger.Warn("No tick data available for the requested range; skipping CSV export.");
+                 _logger.LogWarning("No tick data available for the requested range; skipping CSV export.");
                 return;
             }
 
@@ -67,7 +69,7 @@ internal sealed class CsvGenerator
         var minutes = await LoadMinutesAsync(download, cancellationToken, showProgress: true, phase: "Loading minutes");
         if (minutes.Count == 0)
         {
-            _logger.Warn("No minute data available for the requested range; skipping CSV export.");
+             _logger.LogWarning("No minute data available for the requested range; skipping CSV export.");
             return;
         }
 
@@ -104,7 +106,7 @@ internal sealed class CsvGenerator
         }
         if (needVolumeCounts && volumeCounts is null && generation.FixedVolume is null)
         {
-            _logger.Warn("Volume counts unavailable (no ticks in cache); using source candle volume.");
+             _logger.LogWarning("Volume counts unavailable (no ticks in cache); using source candle volume.");
         }
 
         await WriteCandleCsvAsync(aggregated, download, generation, cancellationToken, volumeCounts);
@@ -135,7 +137,7 @@ internal sealed class CsvGenerator
             var path = cacheManager.ResolveCachePath(slice);
             if (!File.Exists(path))
             {
-                _logger.Warn($"Tick slice missing on disk: {path}");
+                 _logger.LogWarning($"Tick slice missing on disk: {path}");
                 return ValueTask.CompletedTask;
             }
 
@@ -146,7 +148,7 @@ internal sealed class CsvGenerator
             }
             catch (Exception ex)
             {
-                _logger.Warn($"Failed to decode tick file {path}: {ex.Message}");
+                 _logger.LogWarning($"Failed to decode tick file {path}: {ex.Message}");
                 if (showProgress)
                 {
                     var done = Interlocked.Increment(ref processed);
@@ -174,8 +176,7 @@ internal sealed class CsvGenerator
 
         if (showProgress && total > 0)
         {
-            RenderGenerationProgress(total, processed, phase, force: true);
-            _logger.CompleteProgressLine();
+            RenderGenerationProgress(total, processed, phase, force: true, isFinal: true);
         }
 
         return results.OrderBy(t => t.TimestampUtc).ToList();
@@ -206,7 +207,7 @@ internal sealed class CsvGenerator
             var path = cacheManager.ResolveCachePath(slice);
             if (!File.Exists(path))
             {
-                _logger.Warn($"Minute slice missing on disk: {path}");
+                 _logger.LogWarning($"Minute slice missing on disk: {path}");
                 return ValueTask.CompletedTask;
             }
 
@@ -217,7 +218,7 @@ internal sealed class CsvGenerator
             }
             catch (Exception ex)
             {
-                _logger.Warn($"Failed to decode minute file {path}: {ex.Message}");
+                 _logger.LogWarning($"Failed to decode minute file {path}: {ex.Message}");
                 if (showProgress)
                 {
                     var done = Interlocked.Increment(ref processed);
@@ -245,8 +246,7 @@ internal sealed class CsvGenerator
 
         if (showProgress && total > 0)
         {
-            RenderGenerationProgress(total, processed, phase, force: true);
-            _logger.CompleteProgressLine();
+            RenderGenerationProgress(total, processed, phase, force: true, isFinal: true);
         }
 
         return results.OrderBy(c => c.TimestampUtc).ToList();
@@ -266,7 +266,7 @@ internal sealed class CsvGenerator
 
         if (slices.Count == 0)
         {
-            _logger.Warn("No tick data available for the requested range; skipping CSV export.");
+             _logger.LogWarning("No tick data available for the requested range; skipping CSV export.");
             return;
         }
 
@@ -294,7 +294,7 @@ internal sealed class CsvGenerator
             var path = cacheManager.ResolveCachePath(slice);
             if (!File.Exists(path))
             {
-                _logger.Warn($"Tick slice missing on disk: {path}");
+                 _logger.LogWarning($"Tick slice missing on disk: {path}");
                 processedSlices++;
                 RenderGenerationProgress(totalSlices, processedSlices, "Writing ticks");
                 continue;
@@ -307,7 +307,7 @@ internal sealed class CsvGenerator
             }
             catch (Exception ex)
             {
-                _logger.Warn($"Failed to decode tick file {path}: {ex.Message}");
+                 _logger.LogWarning($"Failed to decode tick file {path}: {ex.Message}");
                 processedSlices++;
                 RenderGenerationProgress(totalSlices, processedSlices, "Writing ticks");
                 continue;
@@ -373,8 +373,7 @@ internal sealed class CsvGenerator
             RenderGenerationProgress(totalSlices, processedSlices, "Writing ticks");
         }
 
-        RenderGenerationProgress(totalSlices, totalSlices, "Writing ticks", force: true);
-        _logger.CompleteProgressLine();
+        RenderGenerationProgress(totalSlices, totalSlices, "Writing ticks", force: true, isFinal: true);
 
         if (rowsWritten == 0)
         {
@@ -383,11 +382,11 @@ internal sealed class CsvGenerator
                 File.Delete(exportPath);
             }
 
-            _logger.Warn("No tick data available for the requested range; skipping CSV export.");
+             _logger.LogWarning("No tick data available for the requested range; skipping CSV export.");
             return;
         }
 
-        _logger.Success($"CSV written to {exportPath}");
+         _logger.LogInformation($"CSV written to {exportPath}");
     }
 
     private IReadOnlyDictionary<DateTimeOffset, int> CountVolumes(
@@ -514,8 +513,7 @@ internal sealed class CsvGenerator
 
         if (total > 0)
         {
-            RenderGenerationProgress(total, total, "Writing candles", force: true);
-            _logger.CompleteProgressLine();
+            RenderGenerationProgress(total, total, "Writing candles", force: true, isFinal: true);
         }
 
         if (rowsWritten == 0)
@@ -525,11 +523,11 @@ internal sealed class CsvGenerator
                 File.Delete(path);
             }
 
-            _logger.Warn("No candle data available for the requested range; skipping CSV export.");
+             _logger.LogWarning("No candle data available for the requested range; skipping CSV export.");
             return;
         }
 
-        _logger.Success($"CSV written to {path}");
+         _logger.LogInformation($"CSV written to {path}");
     }
 
     private IReadOnlyList<CandleRecord> ApplySpreads(
@@ -566,7 +564,7 @@ internal sealed class CsvGenerator
                 spread = lastSpread;
                 if (!warnedMissing)
                 {
-                    _logger.Warn($"Missing spread for candle {candle.LocalStart:o}; reusing last known (or 0). Provide --spread-points to force a value.");
+                     _logger.LogWarning($"Missing spread for candle {candle.LocalStart:o}; reusing last known (or 0). Provide --spread-points to force a value.");
                     warnedMissing = true;
                 }
             }
@@ -601,7 +599,7 @@ internal sealed class CsvGenerator
         return localTime.ToString(format, CultureInfo.InvariantCulture);
     }
 
-    private void RenderGenerationProgress(int total, int completed, string phase, bool force = false)
+    private void RenderGenerationProgress(int total, int completed, string phase, bool force = false, bool isFinal = false)
     {
         if (total <= 0)
         {
@@ -609,7 +607,6 @@ internal sealed class CsvGenerator
         }
 
         var percent = total == 0 ? 100 : (int)Math.Round((double)completed * 100 / total);
-        var pending = Math.Max(0, total - completed);
         var now = Stopwatch.GetTimestamp();
         var elapsedMs = now * 1000 / Stopwatch.Frequency;
         if (!force && elapsedMs - _lastProgressTick < 200)
@@ -618,8 +615,10 @@ internal sealed class CsvGenerator
         }
 
         _lastProgressTick = elapsedMs;
-        var spinner = _spinner[_spinnerIndex++ % _spinner.Length];
-        var message = $"Generation {spinner} {phase}: {percent,3}% ({completed}/{total}, pending {pending})";
-        _logger.Progress(message);
+        _progress.Report(new GenerationProgressSnapshot(
+            total,
+            completed,
+            phase,
+            isFinal));
     }
 }

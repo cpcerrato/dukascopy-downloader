@@ -7,6 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Version>0.1.4</Version>
+    <AssemblyName>dukascopy-downloader</AssemblyName>
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
@@ -17,11 +18,14 @@
 
   <ItemGroup>
     <PackageReference Include="SharpCompress" Version="0.42.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Cli/**/*.cs" />
+    <Compile Include="Logging/**/*.cs" />
   </ItemGroup>
 
   <ItemGroup>

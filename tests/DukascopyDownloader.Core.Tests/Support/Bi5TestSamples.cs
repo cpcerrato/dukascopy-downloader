@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace DukascopyDownloader.Tests.Support;
+namespace DukascopyDownloader.Core.Tests.Support;
 
 internal static class Bi5TestSamples
 {

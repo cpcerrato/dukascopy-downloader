@@ -1,5 +1,6 @@
 using DukascopyDownloader.Download;
-using DukascopyDownloader.Logging;
+
+using Microsoft.Extensions.Logging;
 
 namespace DukascopyDownloader.Generation;
 
@@ -41,7 +42,7 @@ internal static class SpreadPlanResolver
             {
                 if (generation.SpreadPoints is not null)
                 {
-                    logger.Warn($"InferTickSize unavailable (no ticks in cache). Using fixed --spread-points={generation.SpreadPoints.Value}.");
+                    logger.LogWarning("InferTickSize unavailable (no ticks in cache). Using fixed --spread-points={SpreadPoints}.", generation.SpreadPoints.Value);
                     return SpreadPlan.Fixed(generation.SpreadPoints.Value);
                 }
 
@@ -53,7 +54,7 @@ internal static class SpreadPlanResolver
             {
                 if (generation.SpreadPoints is not null)
                 {
-                    logger.Warn($"InferTickSize insufficient ({nonZero}/{generation.MinNonZeroDeltas}). Using fixed --spread-points={generation.SpreadPoints.Value}.");
+                    logger.LogWarning("InferTickSize insufficient ({NonZero}/{Min}). Using fixed --spread-points={SpreadPoints}.", nonZero, generation.MinNonZeroDeltas, generation.SpreadPoints.Value);
                     return SpreadPlan.Fixed(generation.SpreadPoints.Value);
                 }
 

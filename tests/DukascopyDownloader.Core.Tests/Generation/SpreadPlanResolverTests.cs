@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using DukascopyDownloader.Download;
 using DukascopyDownloader.Generation;
-using DukascopyDownloader.Logging;
+using DukascopyDownloader.Core.Logging;
+using DukascopyDownloader.Core.Tests.Support;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace DukascopyDownloader.Tests.Generation;

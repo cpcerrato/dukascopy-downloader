@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.IO;
 using DukascopyDownloader.Generation;
-using DukascopyDownloader.Tests.Support;
+using DukascopyDownloader.Core.Tests.Support;
 using Xunit;
 
 namespace DukascopyDownloader.Tests.Generation;

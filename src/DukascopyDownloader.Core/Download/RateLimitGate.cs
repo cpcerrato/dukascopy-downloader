@@ -1,4 +1,5 @@
-using DukascopyDownloader.Logging;
+
+using Microsoft.Extensions.Logging;
 
 namespace DukascopyDownloader.Download;
 
@@ -49,11 +50,11 @@ internal sealed class RateLimitGate
 
         if (scheduled)
         {
-            logger.Warn($"Rate limit pause in effect until {resumeTime:HH:mm:ss}Z.");
+            logger.LogWarning("Rate limit pause in effect until {ResumeTime}Z.", resumeTime.ToString("HH:mm:ss"));
         }
         else
         {
-            logger.Warn("Rate limit pause already active; reusing the longest delay.");
+            logger.LogWarning("Rate limit pause already active; reusing the longest delay.");
         }
     }
 }

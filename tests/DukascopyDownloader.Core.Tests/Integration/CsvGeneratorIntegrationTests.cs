@@ -5,8 +5,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using DukascopyDownloader.Download;
 using DukascopyDownloader.Generation;
-using DukascopyDownloader.Logging;
-using DukascopyDownloader.Tests.Support;
+using DukascopyDownloader.Core.Logging;
+using DukascopyDownloader.Core.Tests.Support;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DukascopyDownloader.Tests.Integration;
 
@@ -24,7 +26,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
 
         PopulateMinuteCache(dayStart);
 
-        var generator = new CsvGenerator(new TestLogger());
+        var generator = new CsvGenerator(NullLoggerFactory.Instance.CreateLogger<CsvGenerator>(), new TestLogger());
         var generation = new GenerationOptions(TimeZoneInfo.Utc, "yyyy-MM-dd HH:mm:ss");
 
         await generator.GenerateAsync(download, generation, CancellationToken.None);
@@ -53,7 +55,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
 
         PopulateMinuteCache(dayStart);
 
-        var generator = new CsvGenerator(new TestLogger());
+        var generator = new CsvGenerator(NullLoggerFactory.Instance.CreateLogger<CsvGenerator>(), new TestLogger());
         var generation = new GenerationOptions(TimeZoneInfo.Utc, null);
 
         var workDir = Path.Combine(_cacheRoot, "cwd");
@@ -85,7 +87,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         var end = start.AddDays(1);
         PopulateTickCache(start);
 
-        var generator = new CsvGenerator(new TestLogger());
+        var generator = new CsvGenerator(NullLoggerFactory.Instance.CreateLogger<CsvGenerator>(), new TestLogger());
         var utcDownload = CreateTickOptions(start, end, outputRoot: Path.Combine(_cacheRoot, "utc-export"));
         var tzDownload = CreateTickOptions(start, end, outputRoot: Path.Combine(_cacheRoot, "tz-export"));
 
@@ -122,7 +124,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         var end = start.AddDays(1);
         PopulateTickCache(start);
 
-        var generator = new CsvGenerator(new TestLogger());
+        var generator = new CsvGenerator(NullLoggerFactory.Instance.CreateLogger<CsvGenerator>(), new TestLogger());
         var utcDownload = CreateTickOptions(start, end, outputRoot: Path.Combine(_cacheRoot, "utc-export"));
         var utcGeneration = new GenerationOptions(TimeZoneInfo.Utc, null);
 
@@ -144,7 +146,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         var end = start.AddDays(1);
         PopulateTickCache(start);
 
-        var generator = new CsvGenerator(new TestLogger());
+        var generator = new CsvGenerator(NullLoggerFactory.Instance.CreateLogger<CsvGenerator>(), new TestLogger());
         var tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var mt5Generation = new GenerationOptions(tz, "yyyy.MM.dd HH:mm:ss.fff", false, ExportTemplate.MetaTrader5, SpreadPoints: 1);
         var download = CreateTickOptions(start, end, outputRoot: Path.Combine(_cacheRoot, "mt5-export"));
@@ -179,7 +181,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         var exportRoot = Path.Combine(_cacheRoot, "mt5-candles");
         var download = CreateDownloadOptions(dayStart, dayStart.AddDays(1), includeInactive: false, outputRoot: exportRoot);
 
-        var generator = new CsvGenerator(new TestLogger());
+        var generator = new CsvGenerator(NullLoggerFactory.Instance.CreateLogger<CsvGenerator>(), new TestLogger());
         var tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var generation = new GenerationOptions(tz, "yyyy.MM.dd HH:mm:ss.fff", false, ExportTemplate.MetaTrader5, SpreadPoints: 1);
 
@@ -205,7 +207,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         var hourStart = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
         PopulateTickCache(hourStart);
 
-        var generator = new CsvGenerator(new TestLogger());
+        var generator = new CsvGenerator(NullLoggerFactory.Instance.CreateLogger<CsvGenerator>(), new TestLogger());
         var download = CreateTickOptions(hourStart, hourStart.AddHours(1), outputRoot: Path.Combine(_cacheRoot, "exports-s1"));
         download = download with { Timeframe = DukascopyTimeframe.Second1 };
 
@@ -230,7 +232,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
 
         PopulateMinuteCache(dayStart);
 
-        var generator = new CsvGenerator(new TestLogger());
+        var generator = new CsvGenerator(NullLoggerFactory.Instance.CreateLogger<CsvGenerator>(), new TestLogger());
         var tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
         var generation = new GenerationOptions(tz, "yyyy-MM-dd HH:mm:ss");
 

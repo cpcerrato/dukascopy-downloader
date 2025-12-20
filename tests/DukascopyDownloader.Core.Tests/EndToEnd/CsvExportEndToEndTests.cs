@@ -5,8 +5,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using DukascopyDownloader.Download;
 using DukascopyDownloader.Generation;
-using DukascopyDownloader.Logging;
-using DukascopyDownloader.Tests.Support;
+using DukascopyDownloader.Core.Logging;
+using DukascopyDownloader.Core.Tests.Support;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DukascopyDownloader.Tests.EndToEnd;
 
@@ -29,7 +31,8 @@ public sealed class CsvExportEndToEndTests : IDisposable
         File.Copy(sample, cachePath, overwrite: true);
         File.Delete(sample);
 
-        var generator = new CsvGenerator(new ConsoleLogger());
+        var logger = new TestLogger();
+        var generator = new CsvGenerator(NullLoggerFactory.Instance.CreateLogger<CsvGenerator>(), logger);
         var generation = new GenerationOptions(TimeZoneInfo.Utc, "yyyy-MM-dd HH:mm:ss");
 
         await generator.GenerateAsync(download, generation, CancellationToken.None);

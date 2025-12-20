@@ -2,7 +2,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using DukascopyDownloader.Download;
-using DukascopyDownloader.Tests.Support;
+using DukascopyDownloader.Core.Tests.Support;
 using Xunit;
 
 namespace DukascopyDownloader.Tests.Download;

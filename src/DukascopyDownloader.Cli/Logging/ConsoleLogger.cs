@@ -1,40 +1,61 @@
 using System.Globalization;
-using DukascopyDownloader.Logging;
+using DukascopyDownloader.Core.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DukascopyDownloader.Cli.Logging;
 
-internal sealed class ConsoleLogger : ILogger
+internal sealed class ConsoleLogger : ILogger, IProgress<DownloadProgressSnapshot>, IProgress<GenerationProgressSnapshot>
 {
+    private sealed class NullScope : IDisposable
+    {
+        public static readonly NullScope Instance = new();
+        public void Dispose() { }
+    }
+
     private readonly object _gate = new();
     private bool _progressActive;
     private int _progressWidth;
-    private long _lastProgressTick;
     private int _spinnerIndex;
     private readonly char[] _spinner = new[] { '|', '/', '-', '\\' };
+    private readonly LogLevel _minLevel;
 
-    public bool VerboseEnabled { get; set; }
+    public ConsoleLogger(bool verbose = false)
+    {
+        _minLevel = verbose ? LogLevel.Debug : LogLevel.Information;
+    }
 
-    public void Info(string message) => Write("INFO", message, ConsoleColor.Gray);
-    public void Success(string message) => Write(" OK ", message, ConsoleColor.Green);
-    public void Warn(string message) => Write("WARN", message, ConsoleColor.Yellow);
-    public void Error(string message) => Write("FAIL", message, ConsoleColor.Red);
+    public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
 
-    public void Progress(string message)
+    public bool IsEnabled(LogLevel logLevel) => logLevel >= _minLevel;
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+        Func<TState, Exception?, string> formatter)
+    {
+        if (!IsEnabled(logLevel))
+        {
+            return;
+        }
+
+        var message = formatter(state, exception);
+        if (exception != null)
+        {
+            message = message + Environment.NewLine + exception;
+        }
+
+        var (levelLabel, color) = ResolveStyle(logLevel, eventId);
+        Write(levelLabel, message, color);
+    }
+
+    public void Report(DownloadProgressSnapshot snapshot)
     {
         lock (_gate)
         {
+            var message = FormatDownloadSnapshot(snapshot, NextSpinner());
             var padded = message.PadRight(_progressWidth);
             _progressWidth = padded.Length;
             _progressActive = true;
             Console.Write("\r" + padded);
-        }
-    }
-
-    public void CompleteProgressLine()
-    {
-        lock (_gate)
-        {
-            if (_progressActive)
+            if (snapshot.IsFinal)
             {
                 Console.WriteLine();
                 _progressActive = false;
@@ -43,12 +64,38 @@ internal sealed class ConsoleLogger : ILogger
         }
     }
 
-    public void Verbose(string message)
+    public void Report(GenerationProgressSnapshot snapshot)
     {
-        if (VerboseEnabled)
+        lock (_gate)
         {
-            Write("VERB", message, ConsoleColor.DarkGray);
+            var message = FormatGenerationSnapshot(snapshot, NextSpinner());
+            var padded = message.PadRight(_progressWidth);
+            _progressWidth = padded.Length;
+            _progressActive = true;
+            Console.Write("\r" + padded);
+            if (snapshot.IsFinal)
+            {
+                Console.WriteLine();
+                _progressActive = false;
+                _progressWidth = 0;
+            }
         }
+    }
+
+    private (string Label, ConsoleColor Color) ResolveStyle(LogLevel level, EventId eventId)
+    {
+        if (eventId.Id == 1000 && eventId.Name == "Success")
+        {
+            return (" OK ", ConsoleColor.Green);
+        }
+
+        return level switch
+        {
+            LogLevel.Warning => ("WARN", ConsoleColor.Yellow),
+            LogLevel.Error or LogLevel.Critical => ("FAIL", ConsoleColor.Red),
+            LogLevel.Debug or LogLevel.Trace => ("VERB", ConsoleColor.DarkGray),
+            _ => ("INFO", ConsoleColor.Gray),
+        };
     }
 
     private void Write(string level, string message, ConsoleColor color)
@@ -70,4 +117,24 @@ internal sealed class ConsoleLogger : ILogger
             Console.WriteLine(message);
         }
     }
+
+    private static string FormatDownloadSnapshot(DownloadProgressSnapshot snapshot, char spinner)
+    {
+        var percent = snapshot.Total == 0 ? 100 : (int)Math.Round((double)snapshot.Completed * 100 / snapshot.Total);
+        var stage = string.IsNullOrWhiteSpace(snapshot.Stage) ? "" : $" {snapshot.Stage}";
+        var pending = Math.Max(0, snapshot.Total - snapshot.Completed);
+        var counters = $"New {snapshot.New} | Cache {snapshot.Cache} | Missing {snapshot.Missing} | Failed {snapshot.Failed}";
+
+        return $"Downloads {spinner} {percent,3}% ({snapshot.Completed}/{snapshot.Total}, pending {pending}) | {counters}";
+    }
+
+    private static string FormatGenerationSnapshot(GenerationProgressSnapshot snapshot, char spinner)
+    {
+        var percent = snapshot.Total == 0 ? 100 : (int)Math.Round((double)snapshot.Completed * 100 / snapshot.Total);
+        var stage = string.IsNullOrWhiteSpace(snapshot.Stage) ? "" : $" {snapshot.Stage}";
+        var pending = Math.Max(0, snapshot.Total - snapshot.Completed);
+        return $"Generation {spinner}{stage}: {percent,3}% ({snapshot.Completed}/{snapshot.Total}, pending {pending})";
+    }
+
+    private char NextSpinner() => _spinner[_spinnerIndex++ % _spinner.Length];
 }

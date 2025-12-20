@@ -6,18 +6,19 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Channels;
-using DukascopyDownloader.Logging;
+using DukascopyDownloader.Core.Logging;
+
+using Microsoft.Extensions.Logging;
 
 namespace DukascopyDownloader.Download;
 
 internal sealed class DownloadOrchestrator
 {
-    private readonly ILogger _logger;
+    private readonly ILogger<DownloadOrchestrator> _logger;
+    private readonly IProgress<DownloadProgressSnapshot> _progress;
     private readonly HttpClient _httpClient;
     private readonly RateLimitGate _rateLimitGate = new();
     private long _lastProgressTick;
-    private int _spinnerIndex;
-    private readonly char[] _spinner = new[] { '|', '/', '-', '\\' };
 
     internal sealed record DownloadJob(DownloadSlice Slice, int Attempts, int RateLimitHits);
 
@@ -35,9 +36,10 @@ internal sealed class DownloadOrchestrator
         public static JobDecision Failed(Exception error) => new(JobDecisionKind.Failed, null, TimeSpan.Zero, error);
     }
 
-    public DownloadOrchestrator(ILogger logger, HttpMessageHandler? httpHandler = null)
+    public DownloadOrchestrator(ILogger<DownloadOrchestrator> logger, IProgress<DownloadProgressSnapshot>? progress = null, HttpMessageHandler? httpHandler = null)
     {
         _logger = logger;
+        _progress = progress ?? NullProgress<DownloadProgressSnapshot>.Instance;
         _httpClient = httpHandler is null
             ? new HttpClient()
             : new HttpClient(httpHandler, disposeHandler: false);
@@ -59,7 +61,7 @@ internal sealed class DownloadOrchestrator
         var slices = DownloadSlicePlanner.Build(options).ToList();
         if (slices.Count == 0)
         {
-            _logger.Info("No downloads were scheduled. Check the requested date range.");
+             _logger.LogInformation("No downloads were scheduled. Check the requested date range.");
             return new DownloadSummary(0, 0, 0, 0, 0, TimeSpan.Zero);
         }
 
@@ -69,7 +71,7 @@ internal sealed class DownloadOrchestrator
             Directory.CreateDirectory(options.OutputDirectory!);
         }
 
-        _logger.Info($"Preparing {slices.Count} files for {options.Instrument} ({options.Timeframe.ToDisplayString()}).");
+         _logger.LogInformation($"Preparing {slices.Count} files for {options.Instrument} ({options.Timeframe.ToDisplayString()}).");
 
         var cacheManager = new CacheManager(options.CacheRoot, options.OutputDirectory);
         var progress = new DownloadProgress();
@@ -113,9 +115,9 @@ internal sealed class DownloadOrchestrator
 
         await Task.WhenAll(workers);
 
-        RenderProgress(slices.Count, progress, force: true);
-        _logger.CompleteProgressLine();
-        _logger.Success($"Downloads completed. New: {progress.SuccessCount}, Cache hits: {progress.CacheHits}, Missing: {progress.SkippedMissing}, Failed: {progress.Failures}.");
+        RenderProgress(slices.Count, progress, force: true, isFinal: true);
+        _logger.LogInformation("Downloads completed. New: {New}, Cache hits: {Cache}, Missing: {Missing}, Failed: {Failed}.",
+            progress.SuccessCount, progress.CacheHits, progress.SkippedMissing, progress.Failures);
 
         if (progress.Failures > 0)
         {
@@ -168,10 +170,9 @@ internal sealed class DownloadOrchestrator
         }
     }
 
-    private void RenderProgress(int totalJobs, DownloadProgress progress, bool force = false)
+    private void RenderProgress(int totalJobs, DownloadProgress progress, bool force = false, bool isFinal = false)
     {
         var completed = progress.SuccessCount + progress.CacheHits + progress.SkippedMissing + progress.Failures;
-        var percent = totalJobs == 0 ? 100 : (int)Math.Round((double)completed * 100 / totalJobs);
         var now = Stopwatch.GetTimestamp();
         var elapsedMs = now * 1000 / Stopwatch.Frequency;
         if (!force && elapsedMs - _lastProgressTick < 200)
@@ -180,10 +181,15 @@ internal sealed class DownloadOrchestrator
         }
 
         _lastProgressTick = elapsedMs;
-        var spinner = _spinner[_spinnerIndex++ % _spinner.Length];
-        var message =
-            $"Downloads {spinner} {percent,3}% ({completed}/{totalJobs}) | New {progress.SuccessCount} | Cache {progress.CacheHits} | Missing {progress.SkippedMissing} | Failed {progress.Failures}";
-        _logger.Progress(message);
+        _progress.Report(new DownloadProgressSnapshot(
+            totalJobs,
+            completed,
+            progress.SuccessCount,
+            progress.CacheHits,
+            progress.SkippedMissing,
+            progress.Failures,
+            null,
+            isFinal));
     }
     internal async Task<JobDecision> ProcessJobAsync(
         DownloadJob job,
@@ -200,7 +206,7 @@ internal sealed class DownloadOrchestrator
         if (options.UseCache && !options.ForceRefresh && File.Exists(destination))
         {
             progress.IncrementCacheHit();
-            _logger.Verbose($"Cache hit {summary} -> {destination}");
+             _logger.LogDebug($"Cache hit {summary} -> {destination}");
             await cacheManager.SyncToOutputAsync(destination, slice, cancellationToken);
             return JobDecision.Completed();
         }
@@ -231,7 +237,7 @@ internal sealed class DownloadOrchestrator
                     return JobDecision.Failed(error);
                 }
 
-                _logger.Warn($"Rate limit detected ({summary}). Attempt {nextRateLimitHits}/{options.RateLimitRetryLimit}. Pausing {options.RateLimitPause.TotalSeconds:F0}s.");
+                 _logger.LogWarning($"Rate limit detected ({summary}). Attempt {nextRateLimitHits}/{options.RateLimitRetryLimit}. Pausing {options.RateLimitPause.TotalSeconds:F0}s.");
                 _rateLimitGate.Trigger(options.RateLimitPause, _logger);
                 var retryJob = job with { Attempts = attemptNumber, RateLimitHits = nextRateLimitHits };
                 return JobDecision.Requeue(retryJob, TimeSpan.Zero);
@@ -240,7 +246,7 @@ internal sealed class DownloadOrchestrator
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
                 progress.IncrementMissing();
-                _logger.Warn($"No data available (404) for {summary}. Skipping.");
+                 _logger.LogWarning($"No data available (404) for {summary}. Skipping.");
                 return JobDecision.Completed();
             }
 
@@ -275,7 +281,7 @@ internal sealed class DownloadOrchestrator
                 return JobDecision.Failed(error);
             }
 
-            _logger.Warn($"Failure downloading {summary} (attempt {attemptNumber}/{maxAttempts}): {ex.Message}. Retrying in {options.RetryDelay.TotalSeconds:F0}s.");
+             _logger.LogWarning($"Failure downloading {summary} (attempt {attemptNumber}/{maxAttempts}): {ex.Message}. Retrying in {options.RetryDelay.TotalSeconds:F0}s.");
             var retryJob = job with { Attempts = attemptNumber };
             return JobDecision.Requeue(retryJob, options.RetryDelay);
         }
