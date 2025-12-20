@@ -51,8 +51,7 @@ internal sealed class ConsoleLogger : ILogger, IProgress<DownloadProgressSnapsho
         lock (_gate)
         {
             var message = FormatDownloadSnapshot(snapshot, NextSpinner());
-            var padded = message.PadRight(_progressWidth);
-            _progressWidth = padded.Length;
+            var padded = PadAndClamp(message);
             _progressActive = true;
             Console.Write("\r" + padded);
             if (snapshot.IsFinal)
@@ -69,8 +68,7 @@ internal sealed class ConsoleLogger : ILogger, IProgress<DownloadProgressSnapsho
         lock (_gate)
         {
             var message = FormatGenerationSnapshot(snapshot, NextSpinner());
-            var padded = message.PadRight(_progressWidth);
-            _progressWidth = padded.Length;
+            var padded = PadAndClamp(message);
             _progressActive = true;
             Console.Write("\r" + padded);
             if (snapshot.IsFinal)
@@ -137,4 +135,15 @@ internal sealed class ConsoleLogger : ILogger, IProgress<DownloadProgressSnapsho
     }
 
     private char NextSpinner() => _spinner[_spinnerIndex++ % _spinner.Length];
+
+    private string PadAndClamp(string message)
+    {
+        var targetWidth = Math.Max(_progressWidth, message.Length);
+        var maxWidth = Console.BufferWidth > 0 ? Console.BufferWidth - 1 : targetWidth;
+        targetWidth = Math.Min(targetWidth, Math.Max(10, maxWidth));
+        _progressWidth = targetWidth;
+        return message.Length > targetWidth
+            ? message[..targetWidth]
+            : message.PadRight(targetWidth);
+    }
 }
