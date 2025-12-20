@@ -99,7 +99,7 @@ dukascopy-downloader \
 | `-t, --to` | Inclusive UTC end date (`YYYY-MM-DD`). |
 | `--timeframe` | `tick`, `s1`, `m1`, `m5`, `m15`, `m30`, `h1`, `h4`, `d1`, `mn1` (default `tick`). |
 | `--cache-root` | Cache directory (default: `./.dukascopy-downloader-cache`). |
-| `-o, --output` | Optional mirror folder for verified BI5 files and CSV exports (defaults to current working directory for reports). |
+| `-o, --output` | Optional mirror folder for verified BI5 files and CSV exports (defaults to current working directory for CSV; BI5s always live under cache). |
 | `--download-only` | Only download/verify BI5 files (skip CSV generation). |
 | `-c, --concurrency` | Parallel downloads (default: CPU cores − 1). |
 | `--export-template` | Preset output format; `mt5` removes headers, uses `yyyy.MM.dd HH:mm:ss.fff`, and sparsifies tick columns. |
@@ -133,10 +133,10 @@ dukascopy-downloader \
   - `spread`: aggregated from tick bid/ask; fallback is `1` point if no tick data is available for the candle.  
   - Recommended: use `--infer-tick-size` (or `--tick-size 0.00001` for 5-digit FX) and import the generated tick CSV into your MT5 custom symbol. MT5 will rebuild bars/spreads internally, avoiding guesses on our side.
 
-Sin plantilla, los CSV incluyen cabeceras y usan:  
+Without a template, CSVs include headers and use:  
 Ticks: `timestamp,ask,bid,askVolume,bidVolume`.  
-Velas: `timestamp,open,high,low,close,volume`.  
-Por defecto el `timestamp` es Unix ms UTC si no se pasa `--timezone/--date-format`.
+Candles: `timestamp,open,high,low,close,volume`.  
+By default `timestamp` is Unix ms (UTC) unless `--timezone/--date-format` is provided.
 
 **Generation options**
 
@@ -172,9 +172,6 @@ Por defecto el `timestamp` es Unix ms UTC si no se pasa `--timezone/--date-forma
 | --- | --- | --- | --- |
 | `mt5` | Ticks | `timestamp,bid,ask,last,volume` | `timestamp` formatted as `yyyy.MM.dd HH:mm:ss.fff` in the chosen timezone; `bid/ask` from Dukascopy quotes (only written when they change vs. previous tick); `last` empty (no trade print); `volume` empty (FX/CFDs have no trade size). |
 | `mt5` | Candles | `timestamp,open,high,low,close,tickVolume,volume,spread` | Bid-based OHLC aggregation; `tickVolume` = candle tick count (or `--fixed-volume` if set); `volume` is always `0` for FX/CFDs; `spread` = aggregated bid/ask spread in MT5 points (uses `--tick-size` or `--infer-tick-size`, or falls back to `--spread-points`). |
-
-Without a template, CSVs keep headers and native Dukascopy fields:  
-Ticks `timestamp,ask,bid,askVolume,bidVolume`; candles `timestamp,open,high,low,close,volume`.
 
 Spread precedence for MT5 candles (and optional spread export):
 - Use `--tick-size`/`--point` when provided (spread = round((ask-bid)/tickSize) aggregated by `--spread-agg`).
@@ -237,13 +234,14 @@ dukascopy-downloader \
 ### Project Structure
 
 ```
-├── Cli/                # CLI parser, usage printer, shared option model
-├── Download/           # Download orchestrator, cache manager, slice planner, rate-limit gate
-├── Generation/         # BI5 decoder, candle aggregators, CSV generator, option factory
-├── Logging/            # Console logger abstraction
+├── src/
+│   ├── DukascopyDownloader.Core/   # Download/generation library (BI5 decode, cache, aggregation, CSV)
+│   └── DukascopyDownloader.Cli/    # CLI entrypoint, option parsing, console logging/progress
 ├── tests/
-│   └── DukascopyDownloader.Tests/  # xUnit test suite
-└── Program.cs          # Entry point wiring modules together
+│   ├── DukascopyDownloader.Core.Tests/
+│   └── DukascopyDownloader.Cli.Tests/
+├── scripts/                        # publish/install helpers, benchmark harness
+└── DukascopyDownloader.sln         # solution file
 ```
 
 ### Build
@@ -258,8 +256,6 @@ dotnet build
 dotnet test DukascopyDownloader.sln
 ```
 
-> ⚠️ The built-in vstest runner requires socket permissions for inter-process communication. If the test command fails with `SocketException (Permission denied)`, rerun from an environment where TCP listeners are allowed (or use `dotnet test -- --port <allowed-port>` when running under constrained sandboxes).
-
 ### Release workflow
 
 - Update `<Version>` in `src/DukascopyDownloader.Cli/DukascopyDownloader.Cli.csproj`.
@@ -270,6 +266,7 @@ dotnet test DukascopyDownloader.sln
 
 - CLI usage and install: `docs/cli.md`
 - Core library overview and tests: `docs/core.md`
+- Core API surface: `docs/core-api.md`
 
 ### Benchmarking
 

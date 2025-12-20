@@ -1,6 +1,6 @@
 # DukascopyDownloader.Core API Reference (overview)
 
-This document summarizes the public (and primary internal) surface of the core library so you can consume it programmatically. Namespaces: `DukascopyDownloader.Download`, `DukascopyDownloader.Generation`, `DukascopyDownloader.Logging`.
+This document summarizes the public (and primary internal) surface of the core library so you can consume it programmatically. Namespaces: `DukascopyDownloader.Download`, `DukascopyDownloader.Generation`, `DukascopyDownloader.Core.Logging`.
 
 > Note: the library is currently internal by default and exposed to tests/CLI via `InternalsVisibleTo`. If you package it as a NuGet, mark the APIs you want to expose as `public`.
 
@@ -94,10 +94,11 @@ Holds download configuration:
 
 ## Logging
 
-### `interface ILogger`
-- `Info`, `Success`, `Warn`, `Error`, `Verbose` – basic logging; `VerboseEnabled` flag.
-- `Progress(string)`, `CompleteProgressLine()` – optional in-place progress updates (no-op when not implemented).
-  Console implementation lives in the CLI (`Logging/ConsoleLogger`); core consumers can inject their own logger.
+- Core APIs take `Microsoft.Extensions.Logging.ILogger<T>` for structured logging.
+- Progress is emitted via `IProgress<T>`:
+  - `IProgress<DownloadProgressSnapshot>` from `DownloadOrchestrator` (total/completed/new/cache/missing/failed, optional stage, `IsFinal`).
+  - `IProgress<GenerationProgressSnapshot>` from `CsvGenerator` (total/completed, optional stage, `IsFinal`).
+- The CLI `ConsoleLogger` implements both `ILogger` and these progress sinks; other hosts can subscribe and render as needed. `NullProgress<T>.Instance` is available for no-op wiring.
 
 ## Typical programmatic flow
 
