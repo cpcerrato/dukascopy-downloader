@@ -24,7 +24,7 @@ for rid in "${RID_LIST[@]}"; do
     --self-contained true \
     /p:DebugType=none
 
-  publish_dir="$ROOT/bin/$CONFIG/net9.0/$rid/publish"
+  publish_dir="$ROOT/src/DukascopyDownloader.Cli/bin/$CONFIG/net9.0/$rid/publish"
   stage_dir="$ARTIFACTS_DIR/stage-$rid"
   mkdir -p "$stage_dir"
 
