@@ -4,7 +4,9 @@ namespace DukascopyDownloader.Generation;
 
 internal static class CandleAggregator
 {
-    public static IReadOnlyList<CandleRecord> AggregateSeconds(IEnumerable<TickRecord> ticks, TimeZoneInfo timeZone)
+    private const decimal DefaultPipValue = 0.0001m;
+
+    public static IReadOnlyList<CandleRecord> AggregateSeconds(IEnumerable<TickRecord> ticks, TimeZoneInfo timeZone, decimal pipValue)
     {
         var buckets = new SortedDictionary<DateTimeOffset, CandleAccumulator>();
         foreach (var tick in ticks)
@@ -12,7 +14,7 @@ internal static class CandleAggregator
             var bucketStart = AlignToSecond(tick.TimestampUtc, timeZone);
             if (!buckets.TryGetValue(bucketStart, out var acc))
             {
-                acc = new CandleAccumulator(bucketStart);
+                acc = new CandleAccumulator(bucketStart, pipValue);
                 buckets[bucketStart] = acc;
             }
             acc.AddTick(tick);
@@ -29,13 +31,16 @@ internal static class CandleAggregator
             var bucketStart = AlignToTimeframe(candle.TimestampUtc, timeframe, timeZone);
             if (!buckets.TryGetValue(bucketStart, out var acc))
             {
-                acc = new CandleAccumulator(bucketStart);
+                acc = new CandleAccumulator(bucketStart, DefaultPipValue);
                 buckets[bucketStart] = acc;
             }
             acc.AddCandle(candle);
         }
 
-        return buckets.Values.Select(acc => acc.Build()).Where(c => c.Volume > 0 || c.Open != 0 || c.Close != 0).ToList();
+        return buckets.Values
+            .Select(acc => acc.Build())
+            .Where(c => c.Volume > 0)
+            .ToList();
     }
 
     internal static DateTimeOffset AlignToSecond(DateTimeOffset timestampUtc, TimeZoneInfo timeZone)
@@ -78,16 +83,20 @@ internal static class CandleAggregator
     private sealed class CandleAccumulator
     {
         private readonly DateTimeOffset _localStart;
+        private readonly decimal _pipValue;
         private decimal _open;
         private decimal _high;
         private decimal _low;
         private decimal _close;
         private double _volume;
         private bool _initialized;
+        private int _spreadPoints = 1;
+        private bool _hasSpread;
 
-        public CandleAccumulator(DateTimeOffset localStart)
+        public CandleAccumulator(DateTimeOffset localStart, decimal pipValue)
         {
             _localStart = localStart;
+            _pipValue = pipValue > 0 ? pipValue : 0.0001m;
             _high = decimal.MinValue;
             _low = decimal.MaxValue;
         }
@@ -97,7 +106,15 @@ internal static class CandleAggregator
             var openClose = tick.Ask;
             var high = tick.Ask >= tick.Bid ? tick.Ask : tick.Bid;
             var low = tick.Ask <= tick.Bid ? tick.Ask : tick.Bid;
-            Update(openClose, high, low, openClose, tick.AskVolume);
+            Update(openClose, high, low, openClose, volume: 1);
+            var point = _pipValue;
+            var spreadPoints = point <= 0 ? 1 : (int)Math.Round((tick.Ask - tick.Bid) / point, MidpointRounding.AwayFromZero);
+            if (spreadPoints <= 0 && tick.Ask > tick.Bid)
+            {
+                spreadPoints = 1;
+            }
+            _spreadPoints = spreadPoints;
+            _hasSpread = true;
         }
 
         public void AddCandle(MinuteRecord candle)
@@ -138,6 +155,7 @@ internal static class CandleAggregator
                 _high == decimal.MinValue ? _open : _high,
                 _low == decimal.MaxValue ? _open : _low,
                 _close,
-                _volume);
+                _volume,
+                _hasSpread ? _spreadPoints : 1);
     }
 }

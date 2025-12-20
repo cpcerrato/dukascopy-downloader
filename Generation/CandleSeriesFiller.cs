@@ -48,7 +48,8 @@ internal static class CandleSeriesFiller
                 lastActual.Close,
                 lastActual.Close,
                 lastActual.Close,
-                0));
+                0,
+                lastActual.SpreadPoints));
         }
 
         return expected;

@@ -100,14 +100,43 @@ dukascopy-downloader \
 | `--timeframe` | `tick`, `s1`, `m1`, `m5`, `m15`, `m30`, `h1`, `h4`, `d1`, `mn1` (default `tick`). |
 | `--cache-root` | Cache directory (default: `./.dukascopy-downloader-cache`). |
 | `-o, --output` | Optional mirror folder for verified BI5 files and CSV exports (defaults to current working directory for reports). |
+| `--download-only` | Only download/verify BI5 files (skip CSV generation). |
 | `-c, --concurrency` | Parallel downloads (default: CPU cores − 1). |
-| `--export-template` | Preset output format; `mt5` removes headers and uses `yyyy.MM.dd HH:mm:ss`. |
+| `--export-template` | Preset output format; `mt5` removes headers, uses `yyyy.MM.dd HH:mm:ss.fff`, and sparsifies tick columns. |
+| `--include-spread` | Append a `spread` column to candle exports (non-MT5). MT5 template enables it automatically. |
+| `--tick-size`, `--point` | Tick size/point value for spread calculation (bars). |
+| `--infer-tick-size` | Infer tick size from tick deltas (requires cached ticks). |
+| `--min-nonzero-deltas` | Minimum >0 deltas to accept inference (default `100`). |
+| `--spread-points` | Fixed spread in points for bars (fallback if no tick size). |
+| `--spread-agg` | Spread aggregation: `median|min|mean|last` (default `median`). |
+| `--include-volume` / `--no-volume` | Keep or drop volume columns (non-MT5). MT5 always includes volume. |
+| `--fixed-volume` | Fixed volume value for candles (overrides calculated tick count). |
 | `--max-retries` | Retry attempts per file (default 4). |
 | `--retry-delay` | Delay between retries (default `5s`). |
 | `--rate-limit-pause` | Sleep duration after HTTP 429 (default `30s`). |
 | `--rate-limit-retries` | Allowed rate-limit retries before failing (default 5). |
 | `--force` | Ignore cache hits (forces re-download). |
 | `--no-cache` | Do not read from cache (still writes). |
+
+**Export templates**
+
+- `--export-template mt5`:
+  - Ticks (no header): `timestamp,bid,ask,last,volume`  
+    - `timestamp`: `yyyy.MM.dd HH:mm:ss.fff` in the chosen timezone.  
+    - `bid/ask`: Dukascopy top-of-book quotes. Cells are sparse: only written when the value changes vs. the previous tick (timestamp always present).  
+    - `last`: left empty for FX/CFDs (no trade print).  
+    - `volume`: left empty for FX/CFDs.  
+  - Candles (no header): `timestamp,open,high,low,close,tickVolume,volume,spread`  
+    - OHLC: aggregated on bid prices.  
+    - `tickVolume`: number of ticks in the candle (or `--fixed-volume` when supplied).  
+    - `volume`: always `0` for FX/CFDs (MT5 “real volume” is unknown).  
+  - `spread`: aggregated from tick bid/ask; fallback is `1` point if no tick data is available for the candle.  
+  - Recommended: use `--infer-tick-size` (or `--tick-size 0.00001` for 5-digit FX) and import the generated tick CSV into your MT5 custom symbol. MT5 will rebuild bars/spreads internally, avoiding guesses on our side.
+
+Sin plantilla, los CSV incluyen cabeceras y usan:  
+Ticks: `timestamp,ask,bid,askVolume,bidVolume`.  
+Velas: `timestamp,open,high,low,close,volume`.  
+Por defecto el `timestamp` es Unix ms UTC si no se pasa `--timezone/--date-format`.
 
 **Generation options**
 
@@ -136,6 +165,70 @@ dukascopy-downloader \
 - Dukascopy sometimes serves **0-byte BI5 files** on inactive sessions (weekends, holidays). These are treated as valid “no activity” slices; combine with `--include-inactive` to synthesize flat, zero-volume candles spanning the gap using the last traded price.
 - Use `--version` to print the CLI version and exit immediately.
 - When downloads ultimately fail, a structured report is written to `cache-root/download-failures.json` so you can rerun or inspect the problematic slices quickly.
+
+### Export template mapping
+
+| Template | Applies to | Columns (no header) | Field mapping |
+| --- | --- | --- | --- |
+| `mt5` | Ticks | `timestamp,bid,ask,last,volume` | `timestamp` formatted as `yyyy.MM.dd HH:mm:ss.fff` in the chosen timezone; `bid/ask` from Dukascopy quotes (only written when they change vs. previous tick); `last` empty (no trade print); `volume` empty (FX/CFDs have no trade size). |
+| `mt5` | Candles | `timestamp,open,high,low,close,tickVolume,volume,spread` | Bid-based OHLC aggregation; `tickVolume` = candle tick count (or `--fixed-volume` if set); `volume` is always `0` for FX/CFDs; `spread` = aggregated bid/ask spread in MT5 points (uses `--tick-size` or `--infer-tick-size`, or falls back to `--spread-points`). |
+
+Without a template, CSVs keep headers and native Dukascopy fields:  
+Ticks `timestamp,ask,bid,askVolume,bidVolume`; candles `timestamp,open,high,low,close,volume`.
+
+Spread precedence for MT5 candles (and optional spread export):
+- Use `--tick-size`/`--point` when provided (spread = round((ask-bid)/tickSize) aggregated by `--spread-agg`).
+- Else `--infer-tick-size` (requires ticks; falls back to `--spread-points` if provided, otherwise errors when insufficient deltas).
+- Else `--spread-points` (fixed spread for all bars).
+- Otherwise, exporting candles with SPREAD fails fast (MT5 template requires one of the above).
+
+### Examples
+
+**Plain CSV (ticks, default UTC ms)**
+```bash
+dukascopy-downloader \
+  --instrument EURUSD \
+  --from 2024-01-01 --to 2024-01-08 \
+  --timeframe tick \
+  --output ./exports
+```
+
+**Plain CSV (m1, human-readable timestamp)**
+```bash
+dukascopy-downloader \
+  --instrument EURUSD \
+  --from 2024-01-01 --to 2024-01-08 \
+  --timeframe m1 \
+  --timezone "America/New_York" \
+  --date-format "yyyy-MM-dd HH:mm:ss" \
+  --output ./exports
+```
+
+**MT5 ticks (recommended: infer tick size)**
+```bash
+dukascopy-downloader \
+  --instrument EURUSD \
+  --from 2024-01-01 --to 2024-01-08 \
+  --timeframe tick \
+  --export-template mt5 \
+  --infer-tick-size \
+  --timezone "America/New_York" \
+  --output ./mt5-ticks
+```
+Import the resulting CSV into your MT5 custom symbol; MT5 will rebuild bars/spreads internally using the real tick stream.
+
+**MT5 candles with fixed spread (when ticks are unavailable)**
+```bash
+dukascopy-downloader \
+  --instrument EURUSD \
+  --from 2024-01-01 --to 2024-01-08 \
+  --timeframe m1 \
+  --export-template mt5 \
+  --spread-points 10 \
+  --fixed-volume 7 \
+  --timezone "America/New_York" \
+  --output ./mt5-bars
+```
 
 ---
 

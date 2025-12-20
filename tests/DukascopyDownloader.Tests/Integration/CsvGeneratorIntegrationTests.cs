@@ -146,7 +146,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
 
         var generator = new CsvGenerator(new ConsoleLogger());
         var tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
-        var mt5Generation = new GenerationOptions(tz, "yyyy.MM.dd HH:mm:ss", false, ExportTemplate.MetaTrader5);
+        var mt5Generation = new GenerationOptions(tz, "yyyy.MM.dd HH:mm:ss.fff", false, ExportTemplate.MetaTrader5, SpreadPoints: 1);
         var download = CreateTickOptions(start, end, outputRoot: Path.Combine(_cacheRoot, "mt5-export"));
 
         await generator.GenerateAsync(download, mt5Generation, CancellationToken.None);
@@ -157,10 +157,16 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         Assert.DoesNotContain("timestamp", lines[0], StringComparison.OrdinalIgnoreCase);
 
         var parts = lines[0].Split(',');
-        Assert.Equal(4, parts.Length);
-        Assert.True(DateTime.TryParseExact(parts[0], "yyyy.MM.dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out _));
-        Assert.True(double.TryParse(parts[3], NumberStyles.Any, CultureInfo.InvariantCulture, out var volume));
-        Assert.True(volume > 0);
+        Assert.Equal(5, parts.Length);
+        Assert.True(DateTime.TryParseExact(parts[0], "yyyy.MM.dd HH:mm:ss.fff", CultureInfo.InvariantCulture, DateTimeStyles.None, out _));
+        Assert.NotEqual(string.Empty, parts[1] + parts[2]); // At least one of bid/ask present
+        Assert.Equal(string.Empty, parts[3]); // Last empty for FX/CFD ticks
+        Assert.Equal(string.Empty, parts[4]); // Volume empty for FX/CFD ticks
+        Assert.All(lines, line =>
+        {
+            var p = line.Split(',');
+            Assert.NotEqual(string.Empty, p[1] + p[2]); // no fully empty bid/ask lines
+        });
     }
 
     [Fact]
@@ -175,7 +181,7 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
 
         var generator = new CsvGenerator(new ConsoleLogger());
         var tz = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
-        var generation = new GenerationOptions(tz, "yyyy.MM.dd HH:mm:ss", false, ExportTemplate.MetaTrader5);
+        var generation = new GenerationOptions(tz, "yyyy.MM.dd HH:mm:ss.fff", false, ExportTemplate.MetaTrader5, SpreadPoints: 1);
 
         await generator.GenerateAsync(download, generation, CancellationToken.None);
 
@@ -186,8 +192,10 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
         Assert.DoesNotContain("timestamp", lines[0], StringComparison.OrdinalIgnoreCase);
 
         var parts = lines[0].Split(',');
-        Assert.Equal(6, parts.Length);
-        Assert.True(DateTime.TryParseExact(parts[0], "yyyy.MM.dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out _));
+        Assert.Equal(8, parts.Length);
+        Assert.True(DateTime.TryParseExact(parts[0], "yyyy.MM.dd HH:mm:ss.fff", CultureInfo.InvariantCulture, DateTimeStyles.None, out _));
+        Assert.Equal("0", parts[6]);      // Volume column remains 0 for FX/CFDs
+        Assert.Equal("1", parts[7]);      // Spread fallback
     }
 
     [Fact]

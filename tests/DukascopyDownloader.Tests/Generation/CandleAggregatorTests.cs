@@ -17,7 +17,7 @@ public class CandleAggregatorTests
             new TickRecord(start.AddMilliseconds(500), 1.1005m, 1.1004m, 2, 2)
         };
 
-        var candles = CandleAggregator.AggregateSeconds(ticks, tz);
+        var candles = CandleAggregator.AggregateSeconds(ticks, tz, 0.0001m);
 
         var candle = Assert.Single(candles);
         Assert.Equal(start, candle.LocalStart);
@@ -25,7 +25,25 @@ public class CandleAggregatorTests
         Assert.Equal(1.1005m, candle.High);
         Assert.Equal(1.0999m, candle.Low);
         Assert.Equal(1.1005m, candle.Close);
-        Assert.Equal(3, candle.Volume);
+        Assert.Equal(2, candle.Volume);
+        Assert.True(candle.SpreadPoints >= 1);
+    }
+
+    [Fact]
+    public void AggregateSeconds_ComputesSpreadPointsFromBidAsk()
+    {
+        var tz = TimeZoneInfo.Utc;
+        var start = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
+        var ticks = new[]
+        {
+            new TickRecord(start, 1.1000m, 1.0998m, 1, 1), // 20 points
+            new TickRecord(start.AddMilliseconds(200), 1.1005m, 1.1003m, 1, 1) // 20 points
+        };
+
+        var candles = CandleAggregator.AggregateSeconds(ticks, tz, 0.0001m);
+
+        var candle = Assert.Single(candles);
+        Assert.Equal(2, candle.SpreadPoints);
     }
 
     [Fact]
@@ -65,5 +83,20 @@ public class CandleAggregatorTests
         Assert.Equal(TimeSpan.FromHours(-5), usCandle.LocalStart.Offset);
         Assert.Equal(TimeSpan.FromHours(1), euCandle.LocalStart.Offset);
         Assert.NotEqual(usCandle.LocalStart, euCandle.LocalStart);
+    }
+
+    [Fact]
+    public void AggregateMinutes_DropsZeroVolumeCandles()
+    {
+        var tz = TimeZoneInfo.Utc;
+        var startUtc = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
+        var minutes = new[]
+        {
+            new MinuteRecord(startUtc, 1.1m, 1.1m, 1.1m, 1.1m, 0)
+        };
+
+        var candles = CandleAggregator.AggregateMinutes(minutes, DukascopyTimeframe.Minute1, tz);
+
+        Assert.Empty(candles);
     }
 }

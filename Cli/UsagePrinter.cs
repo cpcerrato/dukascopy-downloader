@@ -17,6 +17,7 @@ internal static class UsagePrinter
         Console.WriteLine("      --timeframe            tick|s1|m1|m5|m15|m30|h1|h4|d1|mn1 (default: tick).");
         Console.WriteLine("      --cache-root           Cache folder (.dukascopy-downloader-cache).");
         Console.WriteLine("  -o, --output               Optional directory to mirror BI5 files and CSV exports (defaults to CWD for reports).");
+        Console.WriteLine("      --download-only        Only download/verify BI5 files (skip CSV generation).");
         Console.WriteLine("      --concurrency          Parallel downloads (default: cores - 1).");
         Console.WriteLine("      --max-retries          Attempts per file (default: 4).");
         Console.WriteLine("      --retry-delay          Delay between retries (default: 5s).");
@@ -29,6 +30,14 @@ internal static class UsagePrinter
         Console.WriteLine("      --timezone             Output timezone for CSV timestamps.");
         Console.WriteLine("      --date-format          Custom timestamp format.");
         Console.WriteLine("      --export-template      Preset output format (mt5 supported). Overrides header/format.");
+        Console.WriteLine("      --tick-size, --point   Tick size/point value for spread calculation (bars).");
+        Console.WriteLine("      --infer-tick-size      Infer tick size from tick deltas (requires cached ticks).");
+        Console.WriteLine("      --min-nonzero-deltas   Minimum deltas > 0 to accept inference (default: 100).");
+        Console.WriteLine("      --spread-points        Fixed spread in points for bars (fallback if no tick size).");
+        Console.WriteLine("      --spread-agg           Spread aggregation: median|min|mean|last (default: median).");
+        Console.WriteLine("      --include-volume       Keep volume columns (default on; use --no-volume to drop for non-MT5).");
+        Console.WriteLine("      --fixed-volume         Fixed volume value for candles (overrides calculated tick count).");
+        Console.WriteLine("      --include-spread       Append spread column to candle exports (non-MT5). MT5 template enables it automatically.");
         Console.WriteLine("      --include-inactive     Fill closed-market intervals with flat candles (0 volume).");
         Console.WriteLine();
         Console.WriteLine("General:");

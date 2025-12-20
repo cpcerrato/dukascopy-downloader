@@ -56,15 +56,27 @@ internal static class Program
             var downloadSummary = await downloader.ExecuteAsync(options.Download, cts.Token);
             swDownload.Stop();
 
-            var swGeneration = Stopwatch.StartNew();
-            await generator.GenerateAsync(options.Download, options.Generation, cts.Token);
-            swGeneration.Stop();
+            var generationElapsed = TimeSpan.Zero;
+            if (!options.DownloadOnly)
+            {
+                var swGeneration = Stopwatch.StartNew();
+                await generator.GenerateAsync(options.Download, options.Generation, cts.Token);
+                swGeneration.Stop();
+                generationElapsed = swGeneration.Elapsed;
+            }
 
             swTotal.Stop();
 
             logger.Success($"Downloads: New {downloadSummary.NewFiles}, Cache {downloadSummary.CacheHits}, Missing {downloadSummary.Missing}, Failed {downloadSummary.Failed} (total {downloadSummary.Total}).");
             logger.Success($"Download time: {swDownload.Elapsed.TotalSeconds:F2}s");
-            logger.Success($"Generation time: {swGeneration.Elapsed.TotalSeconds:F2}s");
+            if (options.DownloadOnly)
+            {
+                logger.Success("Generation skipped (--download-only).");
+            }
+            else
+            {
+                logger.Success($"Generation time: {generationElapsed.TotalSeconds:F2}s");
+            }
             logger.Success($"Total time: {swTotal.Elapsed.TotalSeconds:F2}s");
 
             return 0;
@@ -92,9 +104,10 @@ internal static class Program
             ? $"{generation.TimeZone.Id} format '{generation.DateFormat ?? "yyyy-MM-dd HH:mm:ss"}'"
             : "UTC (Unix ms)";
         var template = generation.Template != ExportTemplate.None ? $"Template: {generation.Template}" : "Template: none";
+        var mode = options.DownloadOnly ? "Mode: download-only (CSV skipped)" : "Mode: download + CSV";
 
         logger.Info($"Instrument: {download.Instrument}, Timeframe: {tf}, Dates: {download.FromUtc:yyyy-MM-dd}..{toInclusive:yyyy-MM-dd}, Timestamps: {tsDescription}");
         logger.Info($"Cache: {download.CacheRoot}, Output: {(string.IsNullOrWhiteSpace(download.OutputDirectory) ? "cwd" : download.OutputDirectory)}");
-        logger.Info($"Concurrency: {download.Concurrency}, Retries: {download.MaxRetries}, Rate-limit pause: {download.RateLimitPause.TotalSeconds:F0}s x{download.RateLimitRetryLimit}, {template}");
+        logger.Info($"Concurrency: {download.Concurrency}, Retries: {download.MaxRetries}, Rate-limit pause: {download.RateLimitPause.TotalSeconds:F0}s x{download.RateLimitRetryLimit}, {template}, {mode}");
     }
 }

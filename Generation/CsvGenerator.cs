@@ -26,6 +26,8 @@ internal sealed class CsvGenerator
             return;
         }
 
+        var needsSpread = generation.Template == ExportTemplate.MetaTrader5 || generation.IncludeSpread;
+
         if (download.Timeframe == DukascopyTimeframe.Second1)
         {
             var ticks = await LoadTicksAsync(download, cancellationToken);
@@ -35,8 +37,24 @@ internal sealed class CsvGenerator
                 return;
             }
 
-            var candles = CandleAggregator.AggregateSeconds(ticks, generation.TimeZone);
+            IReadOnlyDictionary<DateTimeOffset, int>? spreads = null;
+            int? fixedSpread = null;
+            if (needsSpread)
+            {
+                var spreadPlan = SpreadPlanResolver.Resolve(ticks, generation, download.Timeframe, _logger);
+                spreads = spreadPlan.Mode == SpreadMode.FromTicks
+                    ? SpreadCalculator.AggregateSpreads(ticks, download.Timeframe, generation.TimeZone, spreadPlan.TickSize!.Value, generation.SpreadAggregation)
+                    : null;
+                fixedSpread = spreadPlan.FixedSpreadPoints;
+            }
+
+            var baseTickSize = generation.TickSize ?? 0.0001m;
+            var candles = CandleAggregator.AggregateSeconds(ticks, generation.TimeZone, baseTickSize);
             candles = CandleSeriesFiller.IncludeInactivePeriods(candles, download, generation.TimeZone);
+            if (needsSpread)
+            {
+                candles = ApplySpreads(candles, spreads, fixedSpread);
+            }
             await WriteCandleCsvAsync(candles, download, generation, cancellationToken);
             return;
         }
@@ -48,9 +66,43 @@ internal sealed class CsvGenerator
             return;
         }
 
+        IReadOnlyList<TickRecord> ticksForSpread = Array.Empty<TickRecord>();
+        SpreadPlan? spreadPlanMinutes = null;
+        var needVolumeCounts = generation.IncludeVolume && generation.FixedVolume is null;
+        if (needsSpread)
+        {
+            if (generation.TickSize.HasValue || generation.InferTickSize)
+            {
+                ticksForSpread = await LoadTicksAsync(download with { Timeframe = DukascopyTimeframe.Tick }, cancellationToken);
+            }
+
+            spreadPlanMinutes = SpreadPlanResolver.Resolve(ticksForSpread, generation, download.Timeframe, _logger);
+        }
+        else if (needVolumeCounts)
+        {
+            // Load ticks solely to count volumes if available
+            ticksForSpread = await LoadTicksAsync(download with { Timeframe = DukascopyTimeframe.Tick }, cancellationToken);
+        }
+
         var aggregated = CandleAggregator.AggregateMinutes(minutes, download.Timeframe, generation.TimeZone);
         aggregated = CandleSeriesFiller.IncludeInactivePeriods(aggregated, download, generation.TimeZone);
-        await WriteCandleCsvAsync(aggregated, download, generation, cancellationToken);
+        var volumeCounts = needVolumeCounts && ticksForSpread.Count > 0
+            ? CountVolumes(ticksForSpread, download.Timeframe, generation.TimeZone)
+            : null;
+        if (needsSpread && spreadPlanMinutes is not null)
+        {
+            var spreads = spreadPlanMinutes.Value.Mode == SpreadMode.FromTicks && ticksForSpread.Count > 0
+                ? SpreadCalculator.AggregateSpreads(ticksForSpread, download.Timeframe, generation.TimeZone, spreadPlanMinutes.Value.TickSize!.Value, generation.SpreadAggregation)
+                : null;
+
+            aggregated = ApplySpreads(aggregated, spreads, spreadPlanMinutes.Value.FixedSpreadPoints);
+        }
+        if (needVolumeCounts && volumeCounts is null && generation.FixedVolume is null)
+        {
+            _logger.Warn("Volume counts unavailable (no ticks in cache); using source candle volume.");
+        }
+
+        await WriteCandleCsvAsync(aggregated, download, generation, cancellationToken, volumeCounts);
     }
 
     private async Task<IReadOnlyList<TickRecord>> LoadTicksAsync(DownloadOptions download, CancellationToken cancellationToken)
@@ -165,9 +217,12 @@ internal sealed class CsvGenerator
         if (generation.IncludeHeader)
         {
             await writer.WriteLineAsync(generation.Template == ExportTemplate.MetaTrader5
-                ? "timestamp,bid,ask,volume"
+                ? "timestamp,bid,ask,last,volume"
                 : "timestamp,ask,bid,askVolume,bidVolume");
         }
+
+        decimal? lastBid = null;
+        decimal? lastAsk = null;
 
             foreach (var slice in slices)
             {
@@ -204,12 +259,34 @@ internal sealed class CsvGenerator
                 string line;
                 if (generation.Template == ExportTemplate.MetaTrader5)
                 {
-                    var volume = (tick.AskVolume + tick.BidVolume).ToString(CultureInfo.InvariantCulture);
+                    // Skip ticks where bid/ask haven't changed (volume-only change irrelevant for MT5)
+                    if (lastBid.HasValue && lastAsk.HasValue && tick.Bid == lastBid.Value && tick.Ask == lastAsk.Value)
+                    {
+                        continue;
+                    }
+
+                    var bidField = string.Empty;
+                    var askField = string.Empty;
+
+                    if (!lastBid.HasValue || tick.Bid != lastBid.Value)
+                    {
+                        bidField = tick.Bid.ToString(CultureInfo.InvariantCulture);
+                        lastBid = tick.Bid;
+                    }
+
+                    if (!lastAsk.HasValue || tick.Ask != lastAsk.Value)
+                    {
+                        askField = tick.Ask.ToString(CultureInfo.InvariantCulture);
+                        lastAsk = tick.Ask;
+                    }
+
+                    // MT5 ticks expect 5 columns; leave last/volume empty for FX/CFDs
                     line = string.Join(",",
                         FormatTimestamp(local, generation),
-                        tick.Bid.ToString(CultureInfo.InvariantCulture),
-                        tick.Ask.ToString(CultureInfo.InvariantCulture),
-                        volume);
+                        bidField,
+                        askField,
+                        string.Empty,
+                        string.Empty);
                 }
                 else
                 {
@@ -241,7 +318,32 @@ internal sealed class CsvGenerator
         _logger.Success($"CSV written to {exportPath}");
     }
 
-    private async Task WriteCandleCsvAsync(IReadOnlyList<CandleRecord> candles, DownloadOptions download, GenerationOptions generation, CancellationToken cancellationToken)
+    private IReadOnlyDictionary<DateTimeOffset, int> CountVolumes(
+        IReadOnlyList<TickRecord> ticks,
+        DukascopyTimeframe timeframe,
+        TimeZoneInfo timeZone)
+    {
+        var counts = new Dictionary<DateTimeOffset, int>();
+        foreach (var tick in ticks)
+        {
+            var bucket = timeframe == DukascopyTimeframe.Second1
+                ? CandleAggregator.AlignToSecond(tick.TimestampUtc, timeZone)
+                : CandleAggregator.AlignToTimeframe(tick.TimestampUtc, timeframe, timeZone);
+            if (!counts.TryGetValue(bucket, out var count))
+            {
+                count = 0;
+            }
+            counts[bucket] = count + 1;
+        }
+        return counts;
+    }
+
+    private async Task WriteCandleCsvAsync(
+        IReadOnlyList<CandleRecord> candles,
+        DownloadOptions download,
+        GenerationOptions generation,
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<DateTimeOffset, int>? volumeCounts = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var path = ResolveExportPath(download);
@@ -252,18 +354,76 @@ internal sealed class CsvGenerator
 
         if (generation.IncludeHeader)
         {
-            await writer.WriteLineAsync("timestamp,open,high,low,close,volume");
+            if (generation.Template == ExportTemplate.MetaTrader5)
+            {
+                await writer.WriteLineAsync("timestamp,open,high,low,close,tickVolume,volume,spread");
+            }
+            else
+            {
+                var header = "timestamp,open,high,low,close";
+                if (generation.IncludeVolume)
+                {
+                    header += ",volume";
+                }
+                if (generation.IncludeSpread)
+                {
+                    header += ",spread";
+                }
+                await writer.WriteLineAsync(header);
+            }
         }
 
         foreach (var candle in candles)
         {
-            var line = string.Join(",",
-                FormatTimestamp(candle.LocalStart, generation),
-                candle.Open.ToString(CultureInfo.InvariantCulture),
-                candle.High.ToString(CultureInfo.InvariantCulture),
-                candle.Low.ToString(CultureInfo.InvariantCulture),
-                candle.Close.ToString(CultureInfo.InvariantCulture),
-                candle.Volume.ToString(CultureInfo.InvariantCulture));
+            string line;
+            if (generation.Template == ExportTemplate.MetaTrader5)
+            {
+                var baseVolumeValue = generation.FixedVolume.HasValue
+                    ? generation.FixedVolume.Value
+                    : volumeCounts?.TryGetValue(candle.LocalStart, out var vCount) == true
+                        ? vCount
+                        : candle.Volume;
+                var tickVolume = baseVolumeValue.ToString(CultureInfo.InvariantCulture);
+                var volume = "0"; // MT5 volume is unknown for FX/CFDs; keep 0
+                var spreadPoints = candle.SpreadPoints.ToString(CultureInfo.InvariantCulture);
+                line = string.Join(",",
+                    FormatTimestamp(candle.LocalStart, generation),
+                    candle.Open.ToString(CultureInfo.InvariantCulture),
+                    candle.High.ToString(CultureInfo.InvariantCulture),
+                    candle.Low.ToString(CultureInfo.InvariantCulture),
+                    candle.Close.ToString(CultureInfo.InvariantCulture),
+                    tickVolume,
+                    volume,
+                    spreadPoints);
+            }
+            else
+            {
+                var parts = new List<string>
+                {
+                    FormatTimestamp(candle.LocalStart, generation),
+                    candle.Open.ToString(CultureInfo.InvariantCulture),
+                    candle.High.ToString(CultureInfo.InvariantCulture),
+                    candle.Low.ToString(CultureInfo.InvariantCulture),
+                    candle.Close.ToString(CultureInfo.InvariantCulture)
+                };
+
+                if (generation.IncludeVolume)
+                {
+                    var volumeValue = generation.FixedVolume.HasValue
+                        ? generation.FixedVolume.Value
+                        : volumeCounts?.TryGetValue(candle.LocalStart, out var count) == true
+                            ? count
+                            : candle.Volume;
+                    parts.Add(volumeValue.ToString(CultureInfo.InvariantCulture));
+                }
+
+                if (generation.IncludeSpread)
+                {
+                    parts.Add(candle.SpreadPoints.ToString(CultureInfo.InvariantCulture));
+                }
+
+                line = string.Join(",", parts);
+            }
 
             await writer.WriteLineAsync(line);
             rowsWritten++;
@@ -281,6 +441,52 @@ internal sealed class CsvGenerator
         }
 
         _logger.Success($"CSV written to {path}");
+    }
+
+    private IReadOnlyList<CandleRecord> ApplySpreads(
+        IReadOnlyList<CandleRecord> candles,
+        IReadOnlyDictionary<DateTimeOffset, int>? spreads,
+        int? fixedSpread)
+    {
+        if (spreads is null && fixedSpread is null)
+        {
+            return candles;
+        }
+
+        var result = new List<CandleRecord>(candles.Count);
+        bool warnedMissing = false;
+        int lastSpread = fixedSpread ?? 0;
+
+        foreach (var candle in candles)
+        {
+            int spread = 0;
+            var hasSpread = false;
+            if (spreads is not null && spreads.TryGetValue(candle.LocalStart, out var s))
+            {
+                spread = s;
+                hasSpread = true;
+            }
+            else if (fixedSpread is not null)
+            {
+                spread = fixedSpread.Value;
+                hasSpread = true;
+            }
+
+            if (!hasSpread)
+            {
+                spread = lastSpread;
+                if (!warnedMissing)
+                {
+                    _logger.Warn($"Missing spread for candle {candle.LocalStart:o}; reusing last known (or 0). Provide --spread-points to force a value.");
+                    warnedMissing = true;
+                }
+            }
+
+            lastSpread = spread;
+            result.Add(candle with { SpreadPoints = spread });
+        }
+
+        return result;
     }
 
     private string ResolveExportPath(DownloadOptions download)

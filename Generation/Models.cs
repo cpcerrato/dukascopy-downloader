@@ -21,4 +21,5 @@ internal sealed record CandleRecord(
     decimal High,
     decimal Low,
     decimal Close,
-    double Volume);
+    double Volume,
+    int SpreadPoints);

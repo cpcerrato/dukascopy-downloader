@@ -8,15 +8,56 @@ internal enum ExportTemplate
     MetaTrader5 = 1
 }
 
-internal sealed record GenerationOptions(TimeZoneInfo TimeZone, string? DateFormat, bool IncludeHeader = true, ExportTemplate Template = ExportTemplate.None)
+internal enum SpreadAggregation
+{
+    Median = 0,
+    Min = 1,
+    Mean = 2,
+    Last = 3
+}
+
+internal sealed record GenerationOptions(
+    TimeZoneInfo TimeZone,
+    string? DateFormat,
+    bool IncludeHeader = true,
+    ExportTemplate Template = ExportTemplate.None,
+    decimal? TickSize = null,
+    int? SpreadPoints = null,
+    bool InferTickSize = false,
+    int MinNonZeroDeltas = 100,
+    SpreadAggregation SpreadAggregation = SpreadAggregation.Median,
+    bool IncludeSpread = false,
+    bool IncludeVolume = true,
+    int? FixedVolume = null)
 {
     public bool HasCustomSettings =>
-        TimeZone != TimeZoneInfo.Utc || !string.IsNullOrWhiteSpace(DateFormat) || Template != ExportTemplate.None;
+        TimeZone != TimeZoneInfo.Utc ||
+        !string.IsNullOrWhiteSpace(DateFormat) ||
+        Template != ExportTemplate.None ||
+        TickSize.HasValue ||
+        SpreadPoints.HasValue ||
+        InferTickSize ||
+        IncludeSpread ||
+        !IncludeVolume ||
+        FixedVolume.HasValue;
 }
 
 internal sealed class GenerationOptionsFactory
 {
-    public bool TryCreate(string? timeZoneValue, string? formatValue, ExportTemplate template, out GenerationOptions options, out string? error)
+    public bool TryCreate(
+        string? timeZoneValue,
+        string? formatValue,
+        ExportTemplate template,
+        decimal? tickSize,
+        int? spreadPoints,
+        bool inferTickSize,
+        int minNonZeroDeltas,
+        SpreadAggregation spreadAggregation,
+        bool includeSpread,
+        bool includeVolume,
+        int? fixedVolume,
+        out GenerationOptions options,
+        out string? error)
     {
         var timeZone = TimeZoneInfo.Utc;
         if (!string.IsNullOrWhiteSpace(timeZoneValue))
@@ -41,13 +82,29 @@ internal sealed class GenerationOptionsFactory
         }
 
         var includeHeader = true;
+        var includeSpreadFlag = includeSpread;
+        var includeVolumeFlag = includeVolume;
         if (template == ExportTemplate.MetaTrader5)
         {
             includeHeader = false;
-            dateFormat ??= "yyyy.MM.dd HH:mm:ss";
+            dateFormat ??= "yyyy.MM.dd HH:mm:ss.fff";
+            includeSpreadFlag = true;
+            includeVolumeFlag = true; // MT5 requires volumes
         }
 
-        options = new GenerationOptions(timeZone, dateFormat, includeHeader, template);
+        options = new GenerationOptions(
+            timeZone,
+            dateFormat,
+            includeHeader,
+            template,
+            tickSize,
+            spreadPoints,
+            inferTickSize,
+            minNonZeroDeltas,
+            spreadAggregation,
+            includeSpreadFlag,
+            includeVolumeFlag,
+            fixedVolume);
         error = null;
         return true;
     }

@@ -31,6 +31,19 @@ internal sealed class CliParser
         ["output"] = "output",
         ["out"] = "output",
         ["o"] = "output",
+        ["tick-size"] = "tick-size",
+        ["point"] = "tick-size",
+        ["spread-points"] = "spread-points",
+        ["spread"] = "spread-points",
+        ["infer-tick-size"] = "infer-tick-size",
+        ["min-nonzero-deltas"] = "min-nonzero-deltas",
+        ["spread-agg"] = "spread-agg",
+        ["include-volume"] = "include-volume",
+        ["no-volume"] = "no-volume",
+        ["fixed-volume"] = "fixed-volume",
+        ["include-spread"] = "include-spread",
+        ["download-only"] = "download-only",
+        ["downloadonly"] = "download-only",
         ["concurrency"] = "concurrency",
         ["workers"] = "concurrency",
         ["c"] = "concurrency",
@@ -65,8 +78,13 @@ internal sealed class CliParser
         "force",
         "no-cache",
         "include-inactive",
+        "include-spread",
+        "include-volume",
+        "no-volume",
         "verbose",
         "version",
+        "download-only",
+        "infer-tick-size",
         "help"
     };
 
@@ -194,6 +212,9 @@ internal sealed class CliParser
         var useCache = !normalized.ContainsKey("no-cache");
         var force = normalized.ContainsKey("force");
         var includeInactive = normalized.ContainsKey("include-inactive");
+        var downloadOnly = normalized.ContainsKey("download-only");
+        var inferTickSize = normalized.ContainsKey("infer-tick-size");
+        var includeVolume = normalized.ContainsKey("include-volume") || !normalized.ContainsKey("no-volume");
 
         var concurrency = TryParsePositiveInt(normalized, "concurrency", Environment.ProcessorCount - 1, minValue: 1);
         var maxRetries = TryParsePositiveInt(normalized, "max-retries", 4, minValue: 0);
@@ -204,6 +225,37 @@ internal sealed class CliParser
 
         var timezoneValue = normalized.TryGetValue("timezone", out var tz) ? tz : null;
         var dateFormatValue = normalized.TryGetValue("date-format", out var df) ? df : null;
+        var tickSize = TryParseDecimal(normalized, "tick-size", out error);
+        if (error is not null)
+        {
+            return new CliParseResult(false, false, null, error);
+        }
+
+        var spreadPoints = TryParsePositiveIntAllowNull(normalized, "spread-points", minValue: 1, out error);
+        if (error is not null)
+        {
+            return new CliParseResult(false, false, null, error);
+        }
+
+        var minNonZeroDeltas = TryParsePositiveInt(normalized, "min-nonzero-deltas", 100, minValue: 1);
+        var spreadAggregation = SpreadAggregation.Median;
+        if (normalized.TryGetValue("spread-agg", out var aggValue) && !string.IsNullOrWhiteSpace(aggValue))
+        {
+            spreadAggregation = aggValue.Trim().ToLowerInvariant() switch
+            {
+                "median" => SpreadAggregation.Median,
+                "min" => SpreadAggregation.Min,
+                "mean" => SpreadAggregation.Mean,
+                "last" => SpreadAggregation.Last,
+                _ => SpreadAggregation.Median
+            };
+        }
+        var includeSpread = normalized.ContainsKey("include-spread");
+        var fixedVolume = TryParsePositiveIntAllowNull(normalized, "fixed-volume", minValue: 0, out error);
+        if (error is not null)
+        {
+            return new CliParseResult(false, false, null, error);
+        }
 
         var template = ExportTemplate.None;
         if (normalized.TryGetValue("export-template", out var templateValue) && !string.IsNullOrWhiteSpace(templateValue))
@@ -215,7 +267,20 @@ internal sealed class CliParser
             };
         }
 
-        if (!_generationFactory.TryCreate(timezoneValue, dateFormatValue, template, out var generationOptions, out error))
+        if (!_generationFactory.TryCreate(
+                timezoneValue,
+                dateFormatValue,
+                template,
+                tickSize,
+                spreadPoints,
+                inferTickSize,
+                minNonZeroDeltas,
+                spreadAggregation,
+                includeSpread,
+                includeVolume,
+                fixedVolume,
+                out var generationOptions,
+                out error))
         {
             return new CliParseResult(false, false, null, error);
         }
@@ -236,7 +301,7 @@ internal sealed class CliParser
             rateLimitPause,
             rateLimitRetries);
 
-        var appOptions = new AppOptions(downloadOptions, generationOptions, normalized.ContainsKey("verbose"));
+        var appOptions = new AppOptions(downloadOptions, generationOptions, normalized.ContainsKey("verbose"), downloadOnly);
 
         return new CliParseResult(false, false, appOptions, null);
     }
@@ -286,6 +351,40 @@ internal sealed class CliParser
         }
 
         return Math.Max(minValue, fallback);
+    }
+
+    private static int? TryParsePositiveIntAllowNull(IDictionary<string, string?> map, string key, int minValue, out string? error)
+    {
+        error = null;
+        if (!map.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed >= minValue)
+        {
+            return parsed;
+        }
+
+        error = $"Option '--{key}' must be an integer >= {minValue}.";
+        return null;
+    }
+
+    private static decimal? TryParseDecimal(IDictionary<string, string?> map, string key, out string? error)
+    {
+        error = null;
+        if (!map.TryGetValue(key, out var raw) || string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        if (decimal.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
+        {
+            return parsed;
+        }
+
+        error = $"Option '--{key}' must be a decimal greater than 0.";
+        return null;
     }
 
     private static bool TryValidateMandatory(

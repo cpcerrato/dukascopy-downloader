@@ -10,7 +10,7 @@ public class GenerationOptionsFactoryTests
     [Fact]
     public void TryCreate_WithValidTimezoneAndFormat_Succeeds()
     {
-        var success = _factory.TryCreate("UTC", "yyyy-MM-dd", ExportTemplate.None, out var options, out var error);
+        var success = _factory.TryCreate("UTC", "yyyy-MM-dd", ExportTemplate.None, null, null, false, 100, SpreadAggregation.Median, false, true, null, out var options, out var error);
 
         Assert.True(success);
         Assert.Null(error);
@@ -23,7 +23,7 @@ public class GenerationOptionsFactoryTests
     [Fact]
     public void TryCreate_WithInvalidTimezone_Fails()
     {
-        var success = _factory.TryCreate("Not/AZone", null, ExportTemplate.None, out _, out var error);
+        var success = _factory.TryCreate("Not/AZone", null, ExportTemplate.None, null, null, false, 100, SpreadAggregation.Median, false, true, null, out _, out var error);
 
         Assert.False(success);
         Assert.Contains("not found", error, StringComparison.OrdinalIgnoreCase);
@@ -32,7 +32,7 @@ public class GenerationOptionsFactoryTests
     [Fact]
     public void TryCreate_TrimsFormatAndStoresIt()
     {
-        var success = _factory.TryCreate("UTC", "  yyyy/MM/dd HH:mm  ", ExportTemplate.None, out var options, out var error);
+        var success = _factory.TryCreate("UTC", "  yyyy/MM/dd HH:mm  ", ExportTemplate.None, null, null, false, 100, SpreadAggregation.Median, false, true, null, out var options, out var error);
 
         Assert.True(success);
         Assert.Null(error);
@@ -42,12 +42,12 @@ public class GenerationOptionsFactoryTests
     [Fact]
     public void TryCreate_WithMetaTraderTemplate_SetsDefaults()
     {
-        var success = _factory.TryCreate("Europe/London", null, ExportTemplate.MetaTrader5, out var options, out var error);
+        var success = _factory.TryCreate("Europe/London", null, ExportTemplate.MetaTrader5, null, null, false, 100, SpreadAggregation.Median, false, true, null, out var options, out var error);
 
         Assert.True(success);
         Assert.Null(error);
         Assert.Equal(ExportTemplate.MetaTrader5, options.Template);
         Assert.False(options.IncludeHeader);
-        Assert.Equal("yyyy.MM.dd HH:mm:ss", options.DateFormat);
+        Assert.Equal("yyyy.MM.dd HH:mm:ss.fff", options.DateFormat);
     }
 }

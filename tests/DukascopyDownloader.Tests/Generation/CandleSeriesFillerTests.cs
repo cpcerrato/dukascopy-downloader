@@ -20,14 +20,16 @@ public class CandleSeriesFillerTests
                 1.1010m,
                 1.0990m,
                 1.1005m,
-                12),
+                12,
+                2),
             new(
                 new DateTimeOffset(2025, 1, 10, 0, 2, 0, TimeSpan.Zero),
                 1.1010m,
                 1.1020m,
                 1.1000m,
                 1.1015m,
-                7)
+                7,
+                3)
         };
 
         var download = CreateDownloadOptions(
@@ -45,11 +47,13 @@ public class CandleSeriesFillerTests
         Assert.Equal(0, filler.Volume);
         Assert.Equal(1.1005m, filler.Open);
         Assert.Equal(1.1005m, filler.Close);
+        Assert.Equal(2, filler.SpreadPoints);
 
         var trailing = filled[3];
         Assert.Equal(new DateTimeOffset(2025, 1, 10, 0, 3, 0, TimeSpan.Zero), trailing.LocalStart);
         Assert.Equal(1.1015m, trailing.Open);
         Assert.Equal(0, trailing.Volume);
+        Assert.Equal(3, trailing.SpreadPoints);
     }
 
     [Fact]
@@ -63,7 +67,8 @@ public class CandleSeriesFillerTests
                 1.1010m,
                 1.0990m,
                 1.1005m,
-                12)
+                12,
+                2)
         };
 
         var download = CreateDownloadOptions(
