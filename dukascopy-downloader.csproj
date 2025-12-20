@@ -12,6 +12,7 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>partial</TrimMode>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +20,22 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="Cli/**/*.cs" />
     <Compile Remove="tests/**/*.cs" />
+    <Compile Remove="Download/**/*.cs" />
+    <Compile Remove="Generation/**/*.cs" />
+    <Compile Remove="Logging/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="DukascopyDownloader.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>DukascopyDownloader.Tests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>

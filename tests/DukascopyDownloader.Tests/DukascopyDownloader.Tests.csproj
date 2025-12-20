@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../dukascopy-downloader.csproj" />
+    <ProjectReference Include="../../DukascopyDownloader.Core.csproj" />
   </ItemGroup>
 
 </Project>
