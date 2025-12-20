@@ -255,7 +255,7 @@ dotnet build
 ### Tests
 
 ```bash
-dotnet test tests/DukascopyDownloader.Tests/DukascopyDownloader.Tests.csproj
+dotnet test DukascopyDownloader.sln
 ```
 
 > ⚠️ The built-in vstest runner requires socket permissions for inter-process communication. If the test command fails with `SocketException (Permission denied)`, rerun from an environment where TCP listeners are allowed (or use `dotnet test -- --port <allowed-port>` when running under constrained sandboxes).
@@ -265,6 +265,11 @@ dotnet test tests/DukascopyDownloader.Tests/DukascopyDownloader.Tests.csproj
 - Update `<Version>` in `src/DukascopyDownloader.Cli/DukascopyDownloader.Cli.csproj`.
 - Run `./scripts/publish-all.sh` locally for a smoke check.
 - Trigger the **Manual build** workflow for CI artifacts, or use **Release from main** (workflow_dispatch) with the desired version to tag the current commit, publish artifacts, and create a GitHub release automatically.
+
+### Documentation
+
+- CLI usage and install: `docs/cli.md`
+- Core library overview and tests: `docs/core.md`
 
 ### Benchmarking
 
