@@ -18,7 +18,7 @@ jobs:
       - name: Determine build version
         id: version
         run: |
-          file_version=$(grep -m1 -oE '<Version>[^<]+' dukascopy-downloader.csproj | sed 's/<Version>//')
+          file_version=$(grep -m1 -oE '<Version>[^<]+' src/DukascopyDownloader.Cli/DukascopyDownloader.Cli.csproj | sed 's/<Version>//')
           input="${{ inputs.version }}"
           if [ -z "$input" ]; then
             build="$file_version"
@@ -39,7 +39,7 @@ jobs:
           echo "build=$build" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Run tests
-        run: dotnet test tests/DukascopyDownloader.Tests/DukascopyDownloader.Tests.csproj
+        run: dotnet test DukascopyDownloader.sln
       - name: Publish binaries
         run: |
           chmod +x scripts/publish-all.sh

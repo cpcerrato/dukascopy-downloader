@@ -30,7 +30,7 @@ jobs:
       - name: Determine version from project
         id: version
         run: |
-          file_version=$(grep -m1 -oE '<Version>[^<]+' dukascopy-downloader.csproj | sed 's/<Version>//')
+          file_version=$(grep -m1 -oE '<Version>[^<]+' src/DukascopyDownloader.Cli/DukascopyDownloader.Cli.csproj | sed 's/<Version>//')
           echo "Project version: $file_version"
           tag="v$file_version"
           echo "build=$file_version" >> "$GITHUB_OUTPUT"
@@ -42,7 +42,7 @@ jobs:
             exit 1
           fi
       - name: Run tests
-        run: dotnet test tests/DukascopyDownloader.Tests/DukascopyDownloader.Tests.csproj
+        run: dotnet test DukascopyDownloader.sln
       - name: Build release artifacts
         run: |
           chmod +x scripts/publish-all.sh
