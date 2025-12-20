@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text;
@@ -10,6 +11,9 @@ namespace DukascopyDownloader.Generation;
 internal sealed class CsvGenerator
 {
     private readonly ConsoleLogger _logger;
+    private long _lastProgressTick;
+    private int _spinnerIndex;
+    private readonly char[] _spinner = new[] { '|', '/', '-', '\\' };
 
     public CsvGenerator(ConsoleLogger logger)
     {
@@ -30,7 +34,7 @@ internal sealed class CsvGenerator
 
         if (download.Timeframe == DukascopyTimeframe.Second1)
         {
-            var ticks = await LoadTicksAsync(download, cancellationToken);
+            var ticks = await LoadTicksAsync(download, cancellationToken, showProgress: true, phase: "Loading ticks");
             if (ticks.Count == 0)
             {
                 _logger.Warn("No tick data available for the requested range; skipping CSV export.");
@@ -59,7 +63,7 @@ internal sealed class CsvGenerator
             return;
         }
 
-        var minutes = await LoadMinutesAsync(download, cancellationToken);
+        var minutes = await LoadMinutesAsync(download, cancellationToken, showProgress: true, phase: "Loading minutes");
         if (minutes.Count == 0)
         {
             _logger.Warn("No minute data available for the requested range; skipping CSV export.");
@@ -73,7 +77,7 @@ internal sealed class CsvGenerator
         {
             if (generation.TickSize.HasValue || generation.InferTickSize)
             {
-                ticksForSpread = await LoadTicksAsync(download with { Timeframe = DukascopyTimeframe.Tick }, cancellationToken);
+                ticksForSpread = await LoadTicksAsync(download with { Timeframe = DukascopyTimeframe.Tick }, cancellationToken, showProgress: true, phase: "Loading ticks (spreads)");
             }
 
             spreadPlanMinutes = SpreadPlanResolver.Resolve(ticksForSpread, generation, download.Timeframe, _logger);
@@ -81,7 +85,7 @@ internal sealed class CsvGenerator
         else if (needVolumeCounts)
         {
             // Load ticks solely to count volumes if available
-            ticksForSpread = await LoadTicksAsync(download with { Timeframe = DukascopyTimeframe.Tick }, cancellationToken);
+            ticksForSpread = await LoadTicksAsync(download with { Timeframe = DukascopyTimeframe.Tick }, cancellationToken, showProgress: true, phase: "Loading ticks (volume)");
         }
 
         var aggregated = CandleAggregator.AggregateMinutes(minutes, download.Timeframe, generation.TimeZone);
@@ -105,12 +109,23 @@ internal sealed class CsvGenerator
         await WriteCandleCsvAsync(aggregated, download, generation, cancellationToken, volumeCounts);
     }
 
-    private async Task<IReadOnlyList<TickRecord>> LoadTicksAsync(DownloadOptions download, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<TickRecord>> LoadTicksAsync(
+        DownloadOptions download,
+        CancellationToken cancellationToken,
+        bool showProgress = false,
+        string phase = "Loading ticks")
     {
         var cacheManager = new CacheManager(download.CacheRoot, null);
         var slices = DownloadSlicePlanner.Build(download)
             .Where(s => s.FeedKind == DukascopyFeedKind.Tick)
             .ToList();
+        var total = slices.Count;
+        var processed = 0;
+
+        if (showProgress && total > 0)
+        {
+            RenderGenerationProgress(total, processed, phase, force: true);
+        }
 
         var results = new ConcurrentBag<TickRecord>();
 
@@ -131,6 +146,11 @@ internal sealed class CsvGenerator
             catch (Exception ex)
             {
                 _logger.Warn($"Failed to decode tick file {path}: {ex.Message}");
+                if (showProgress)
+                {
+                    var done = Interlocked.Increment(ref processed);
+                    RenderGenerationProgress(total, done, phase);
+                }
                 return ValueTask.CompletedTask;
             }
 
@@ -142,18 +162,41 @@ internal sealed class CsvGenerator
                 }
             }
 
+            if (showProgress)
+            {
+                var done = Interlocked.Increment(ref processed);
+                RenderGenerationProgress(total, done, phase);
+            }
+
             return ValueTask.CompletedTask;
         });
+
+        if (showProgress && total > 0)
+        {
+            RenderGenerationProgress(total, processed, phase, force: true);
+            _logger.CompleteProgressLine();
+        }
 
         return results.OrderBy(t => t.TimestampUtc).ToList();
     }
 
-    private async Task<IReadOnlyList<MinuteRecord>> LoadMinutesAsync(DownloadOptions download, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<MinuteRecord>> LoadMinutesAsync(
+        DownloadOptions download,
+        CancellationToken cancellationToken,
+        bool showProgress = false,
+        string phase = "Loading minutes")
     {
         var cacheManager = new CacheManager(download.CacheRoot, null);
         var slices = DownloadSlicePlanner.Build(download)
             .Where(s => s.FeedKind == DukascopyFeedKind.Minute)
             .ToList();
+        var total = slices.Count;
+        var processed = 0;
+
+        if (showProgress && total > 0)
+        {
+            RenderGenerationProgress(total, processed, phase, force: true);
+        }
 
         var results = new ConcurrentBag<MinuteRecord>();
 
@@ -174,6 +217,11 @@ internal sealed class CsvGenerator
             catch (Exception ex)
             {
                 _logger.Warn($"Failed to decode minute file {path}: {ex.Message}");
+                if (showProgress)
+                {
+                    var done = Interlocked.Increment(ref processed);
+                    RenderGenerationProgress(total, done, phase);
+                }
                 return ValueTask.CompletedTask;
             }
 
@@ -185,8 +233,20 @@ internal sealed class CsvGenerator
                 }
             }
 
+            if (showProgress)
+            {
+                var done = Interlocked.Increment(ref processed);
+                RenderGenerationProgress(total, done, phase);
+            }
+
             return ValueTask.CompletedTask;
         });
+
+        if (showProgress && total > 0)
+        {
+            RenderGenerationProgress(total, processed, phase, force: true);
+            _logger.CompleteProgressLine();
+        }
 
         return results.OrderBy(c => c.TimestampUtc).ToList();
     }
@@ -200,6 +260,8 @@ internal sealed class CsvGenerator
             .Where(s => s.FeedKind == DukascopyFeedKind.Tick)
             .OrderBy(s => s.Start)
             .ToList();
+        var totalSlices = slices.Count;
+        var processedSlices = 0;
 
         if (slices.Count == 0)
         {
@@ -209,9 +271,9 @@ internal sealed class CsvGenerator
 
         var exportPath = ResolveExportPath(download);
         var rowsWritten = 0;
+        RenderGenerationProgress(totalSlices, processedSlices, "Writing ticks", force: true);
 
-        {
-            await using var stream = new FileStream(exportPath, FileMode.Create, FileAccess.Write, FileShare.Read, bufferSize: 64 * 1024, useAsync: true);
+        await using var stream = new FileStream(exportPath, FileMode.Create, FileAccess.Write, FileShare.Read, bufferSize: 64 * 1024, useAsync: true);
         await using var writer = new StreamWriter(stream, Encoding.UTF8);
 
         if (generation.IncludeHeader)
@@ -224,38 +286,42 @@ internal sealed class CsvGenerator
         decimal? lastBid = null;
         decimal? lastAsk = null;
 
-            foreach (var slice in slices)
+        foreach (var slice in slices)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var path = cacheManager.ResolveCachePath(slice);
+            if (!File.Exists(path))
             {
+                _logger.Warn($"Tick slice missing on disk: {path}");
+                processedSlices++;
+                RenderGenerationProgress(totalSlices, processedSlices, "Writing ticks");
+                continue;
+            }
+
+            IReadOnlyList<TickRecord> ticks;
+            try
+            {
+                ticks = Bi5Decoder.ReadTicks(path, slice.Start);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn($"Failed to decode tick file {path}: {ex.Message}");
+                processedSlices++;
+                RenderGenerationProgress(totalSlices, processedSlices, "Writing ticks");
+                continue;
+            }
+
+            foreach (var tick in ticks)
+            {
+                if (tick.TimestampUtc < download.FromUtc || tick.TimestampUtc >= download.ToUtc)
+                {
+                    continue;
+                }
+
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var path = cacheManager.ResolveCachePath(slice);
-                if (!File.Exists(path))
-                {
-                    _logger.Warn($"Tick slice missing on disk: {path}");
-                    continue;
-                }
-
-                IReadOnlyList<TickRecord> ticks;
-                try
-                {
-                    ticks = Bi5Decoder.ReadTicks(path, slice.Start);
-                }
-                catch (Exception ex)
-                {
-                    _logger.Warn($"Failed to decode tick file {path}: {ex.Message}");
-                    continue;
-                }
-
-                foreach (var tick in ticks)
-                {
-                    if (tick.TimestampUtc < download.FromUtc || tick.TimestampUtc >= download.ToUtc)
-                    {
-                        continue;
-                    }
-
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var local = TimeZoneInfo.ConvertTime(tick.TimestampUtc, generation.TimeZone);
+                var local = TimeZoneInfo.ConvertTime(tick.TimestampUtc, generation.TimeZone);
                 string line;
                 if (generation.Template == ExportTemplate.MetaTrader5)
                 {
@@ -301,8 +367,13 @@ internal sealed class CsvGenerator
                 await writer.WriteLineAsync(line);
                 rowsWritten++;
             }
+
+            processedSlices++;
+            RenderGenerationProgress(totalSlices, processedSlices, "Writing ticks");
         }
-        }
+
+        RenderGenerationProgress(totalSlices, totalSlices, "Writing ticks", force: true);
+        _logger.CompleteProgressLine();
 
         if (rowsWritten == 0)
         {
@@ -348,6 +419,12 @@ internal sealed class CsvGenerator
         cancellationToken.ThrowIfCancellationRequested();
         var path = ResolveExportPath(download);
         var rowsWritten = 0;
+        var total = candles.Count;
+
+        if (total > 0)
+        {
+            RenderGenerationProgress(total, 0, "Writing candles", force: true);
+        }
 
         await using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read, bufferSize: 64 * 1024, useAsync: true);
         await using var writer = new StreamWriter(stream, Encoding.UTF8);
@@ -427,6 +504,17 @@ internal sealed class CsvGenerator
 
             await writer.WriteLineAsync(line);
             rowsWritten++;
+
+            if (total > 0)
+            {
+                RenderGenerationProgress(total, rowsWritten, "Writing candles");
+            }
+        }
+
+        if (total > 0)
+        {
+            RenderGenerationProgress(total, total, "Writing candles", force: true);
+            _logger.CompleteProgressLine();
         }
 
         if (rowsWritten == 0)
@@ -512,4 +600,25 @@ internal sealed class CsvGenerator
         return localTime.ToString(format, CultureInfo.InvariantCulture);
     }
 
+    private void RenderGenerationProgress(int total, int completed, string phase, bool force = false)
+    {
+        if (total <= 0)
+        {
+            return;
+        }
+
+        var percent = total == 0 ? 100 : (int)Math.Round((double)completed * 100 / total);
+        var pending = Math.Max(0, total - completed);
+        var now = Stopwatch.GetTimestamp();
+        var elapsedMs = now * 1000 / Stopwatch.Frequency;
+        if (!force && elapsedMs - _lastProgressTick < 200)
+        {
+            return;
+        }
+
+        _lastProgressTick = elapsedMs;
+        var spinner = _spinner[_spinnerIndex++ % _spinner.Length];
+        var message = $"Generation {spinner} {phase}: {percent,3}% ({completed}/{total}, pending {pending})";
+        _logger.Progress(message);
+    }
 }
