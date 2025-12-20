@@ -50,4 +50,14 @@ public class GenerationOptionsFactoryTests
         Assert.False(options.IncludeHeader);
         Assert.Equal("yyyy.MM.dd HH:mm:ss.fff", options.DateFormat);
     }
+
+    [Fact]
+    public void TryCreate_WithPreferTicks_SetsFlag()
+    {
+        var success = _factory.TryCreate("UTC", null, ExportTemplate.None, null, null, false, 100, SpreadAggregation.Median, false, true, null, true, out var options, out var error);
+
+        Assert.True(success);
+        Assert.Null(error);
+        Assert.True(options.PreferTicks);
+    }
 }

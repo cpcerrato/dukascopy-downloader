@@ -85,4 +85,22 @@ public class CliParserTests
         Assert.False(result.ShowHelp);
         Assert.False(result.IsValid);
     }
+
+    [Fact]
+    public void Parse_WithPreferTicks_SetsFlag()
+    {
+        var parser = CreateParser();
+
+        var result = parser.Parse(new[]
+        {
+            "--instrument", "EURUSD",
+            "--from", "2024-01-01",
+            "--to", "2024-01-02",
+            "--timeframe", "m1",
+            "--prefer-ticks"
+        });
+
+        Assert.True(result.IsValid);
+        Assert.True(result.Options!.Generation.PreferTicks);
+    }
 }

@@ -55,11 +55,27 @@ internal static class Program
         try
         {
             PrintOptionsSummary(logger, options);
+            var targetTimeframe = options.Download.Timeframe;
+            var preferTicks = options.Generation.PreferTicks && targetTimeframe != DukascopyTimeframe.Tick;
+
+            if (!preferTicks && targetTimeframe != DukascopyTimeframe.Tick &&
+                (options.Generation.TickSize.HasValue ||
+                 options.Generation.InferTickSize ||
+                 options.Generation.SpreadPoints.HasValue ||
+                 options.Generation.IncludeSpread))
+            {
+                logger.LogWarning("Spread/tick-size options were provided but --prefer-ticks is not set; bars will be taken from Dukascopy M1 feed without tick-based spread.");
+            }
+
+            if (preferTicks)
+            {
+                logger.LogInformation("Prefer-ticks enabled: exporting {Tf} from tick feed (may download tick history if not cached).", targetTimeframe.ToDisplayString());
+            }
+
             var swTotal = Stopwatch.StartNew();
 
-            var targetTimeframe = options.Download.Timeframe;
             var downloadForRun = options.Download;
-            if (options.Generation.PreferTicks && targetTimeframe != DukascopyTimeframe.Tick)
+            if (preferTicks)
             {
                 downloadForRun = options.Download with { Timeframe = DukascopyTimeframe.Tick };
             }
