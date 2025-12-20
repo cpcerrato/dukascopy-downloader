@@ -262,7 +262,7 @@ dotnet test tests/DukascopyDownloader.Tests/DukascopyDownloader.Tests.csproj
 
 ### Release workflow
 
-- Update `<Version>` in `dukascopy-downloader.csproj`.
+- Update `<Version>` in `src/DukascopyDownloader.Cli/DukascopyDownloader.Cli.csproj`.
 - Run `./scripts/publish-all.sh` locally for a smoke check.
 - Trigger the **Manual build** workflow for CI artifacts, or use **Release from main** (workflow_dispatch) with the desired version to tag the current commit, publish artifacts, and create a GitHub release automatically.
 
