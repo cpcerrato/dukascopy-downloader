@@ -13,6 +13,13 @@ internal static class CandleAggregator
     /// <param name="timeZone">Target timezone for candle start alignment.</param>
     /// <param name="pipValue">Price increment (point value) used for spread calculation in seconds aggregation.</param>
     /// <returns>List of second candles aligned to the provided timezone.</returns>
+    /// <summary>
+    /// Aggregates tick records into 1-second candles.
+    /// </summary>
+    /// <param name="ticks">Tick stream (UTC) to aggregate.</param>
+    /// <param name="timeZone">Target timezone for candle start times.</param>
+    /// <param name="pipValue">Tick size/point used to compute spread points.</param>
+    /// <returns>Sequence of second-level candles ordered by start time.</returns>
     public static IReadOnlyList<CandleRecord> AggregateSeconds(IEnumerable<TickRecord> ticks, TimeZoneInfo timeZone, decimal pipValue)
     {
         var buckets = new SortedDictionary<DateTimeOffset, CandleAccumulator>();
@@ -37,6 +44,13 @@ internal static class CandleAggregator
     /// <param name="timeframe">Target timeframe (>= m1).</param>
     /// <param name="timeZone">Target timezone for bucket alignment.</param>
     /// <returns>Aggregated candles, excluding zero-volume entries.</returns>
+    /// <summary>
+    /// Aggregates Dukascopy minute records into higher timeframes.
+    /// </summary>
+    /// <param name="minutes">Minute bars to aggregate.</param>
+    /// <param name="timeframe">Target timeframe (must be minute-or-higher).</param>
+    /// <param name="timeZone">Target timezone for candle start times.</param>
+    /// <returns>Aggregated candles ordered by start time.</returns>
     public static IReadOnlyList<CandleRecord> AggregateMinutes(IEnumerable<MinuteRecord> minutes, DukascopyTimeframe timeframe, TimeZoneInfo timeZone)
     {
         var buckets = new SortedDictionary<DateTimeOffset, CandleAccumulator>();
@@ -60,6 +74,14 @@ internal static class CandleAggregator
     /// <summary>
     /// Aggregates tick records directly into the requested timeframe (>= m1), counting ticks as volume.
     /// </summary>
+    /// <summary>
+    /// Aggregates tick records directly into the requested timeframe, computing spreads from tick deltas.
+    /// </summary>
+    /// <param name="ticks">Tick stream (UTC) to aggregate.</param>
+    /// <param name="timeframe">Target timeframe (minute-or-higher).</param>
+    /// <param name="timeZone">Target timezone for candle start times.</param>
+    /// <param name="tickSize">Tick size/point used to convert bid-ask deltas into spread points.</param>
+    /// <returns>Aggregated candles ordered by start time.</returns>
     public static IReadOnlyList<CandleRecord> AggregateTicks(IEnumerable<TickRecord> ticks, DukascopyTimeframe timeframe, TimeZoneInfo timeZone, decimal tickSize)
     {
         var buckets = new SortedDictionary<DateTimeOffset, CandleAccumulator>();
@@ -100,6 +122,7 @@ internal static class CandleAggregator
             DukascopyTimeframe.Hour1 => AlignHours(local, 1),
             DukascopyTimeframe.Hour4 => AlignHours(local, 4),
             DukascopyTimeframe.Day1 => new DateTimeOffset(local.Year, local.Month, local.Day, 0, 0, 0, offset),
+            DukascopyTimeframe.Week1 => AlignToWeek(local),
             DukascopyTimeframe.Month1 => new DateTimeOffset(local.Year, local.Month, 1, 0, 0, 0, offset),
             _ => new DateTimeOffset(local.Year, local.Month, local.Day, local.Hour, local.Minute, 0, offset)
         };
@@ -115,6 +138,16 @@ internal static class CandleAggregator
     {
         var hourBucket = (local.Hour / period) * period;
         return new DateTimeOffset(local.Year, local.Month, local.Day, hourBucket, 0, 0, local.Offset);
+    }
+
+    private static DateTimeOffset AlignToWeek(DateTimeOffset local)
+    {
+        var startOfWeek = local;
+        while (startOfWeek.DayOfWeek != DayOfWeek.Monday)
+        {
+            startOfWeek = startOfWeek.AddDays(-1);
+        }
+        return new DateTimeOffset(startOfWeek.Year, startOfWeek.Month, startOfWeek.Day, 0, 0, 0, local.Offset);
     }
 
     private sealed class CandleAccumulator

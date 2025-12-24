@@ -6,7 +6,7 @@
     <RootNamespace>DukascopyDownloader</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>0.1.4</Version>
+    <Version>0.1.4-beta.1</Version>
     <AssemblyName>dukascopy-downloader</AssemblyName>
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
@@ -20,6 +20,7 @@
     <PackageReference Include="SharpCompress" Version="0.42.1" />
     <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
   </ItemGroup>
 
   <ItemGroup>

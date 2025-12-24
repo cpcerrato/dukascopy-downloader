@@ -126,6 +126,17 @@ internal static class SpreadCalculator
         return (int)Math.Round(raw, MidpointRounding.AwayFromZero);
     }
 
+    private static int ComputeSpreadPoints(decimal ask, decimal bid, decimal tickSize)
+    {
+        if (tickSize <= 0)
+        {
+            return 0;
+        }
+
+        var raw = (ask - bid) / tickSize;
+        return (int)Math.Round(raw, MidpointRounding.AwayFromZero);
+    }
+
     private static int Median(List<int> values)
     {
         values.Sort();

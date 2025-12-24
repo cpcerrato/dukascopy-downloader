@@ -8,6 +8,10 @@ internal sealed class RateLimitGate
     private readonly object _sync = new();
     private DateTimeOffset _resumeAt = DateTimeOffset.MinValue;
 
+    /// <summary>
+    /// Waits until the current rate-limit pause has elapsed.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token to abort waiting.</param>
     public async Task WaitIfNeededAsync(CancellationToken cancellationToken)
     {
         while (true)
@@ -28,6 +32,11 @@ internal sealed class RateLimitGate
         }
     }
 
+    /// <summary>
+    /// Schedules a new rate-limit pause; keeps the longest pause if multiple are triggered.
+    /// </summary>
+    /// <param name="pause">Duration to pause new work.</param>
+    /// <param name="logger">Logger for warning output.</param>
     public void Trigger(TimeSpan pause, ILogger logger)
     {
         bool scheduled = false;

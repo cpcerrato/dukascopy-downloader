@@ -13,20 +13,53 @@ internal enum DukascopyTimeframe
     Hour1 = 6,
     Hour4 = 7,
     Day1 = 8,
-    Month1 = 9
+    Week1 = 9,
+    Month1 = 10
 }
 
 internal enum DukascopyFeedKind
 {
     Tick,
-    Minute
+    Minute,
+    Hour,
+    Day
+}
+
+internal enum DukascopyPriceSide
+{
+    Bid,
+    Ask
+}
+
+internal enum PriceSidePreference
+{
+    Bid,
+    Ask,
+    Both
 }
 
 internal static class DukascopyTimeframeExtensions
 {
+    /// <summary>
+    /// Maps a Dukascopy timeframe to its underlying feed kind (tick or minute).
+    /// </summary>
+    /// <param name="timeframe">Requested timeframe.</param>
+    /// <returns>Base Dukascopy feed kind.</returns>
     public static DukascopyFeedKind GetFeedKind(this DukascopyTimeframe timeframe) =>
-        timeframe <= DukascopyTimeframe.Second1 ? DukascopyFeedKind.Tick : DukascopyFeedKind.Minute;
+        timeframe switch
+        {
+            DukascopyTimeframe.Tick or DukascopyTimeframe.Second1 => DukascopyFeedKind.Tick,
+            DukascopyTimeframe.Minute1 or DukascopyTimeframe.Minute5 or DukascopyTimeframe.Minute15 or DukascopyTimeframe.Minute30 => DukascopyFeedKind.Minute,
+            DukascopyTimeframe.Hour1 or DukascopyTimeframe.Hour4 => DukascopyFeedKind.Hour,
+            DukascopyTimeframe.Day1 or DukascopyTimeframe.Week1 or DukascopyTimeframe.Month1 => DukascopyFeedKind.Day,
+            _ => DukascopyFeedKind.Minute
+        };
 
+    /// <summary>
+    /// Returns the Dukascopy feed shorthand string for the timeframe (e.g., m1, h1).
+    /// </summary>
+    /// <param name="timeframe">Requested timeframe.</param>
+    /// <returns>Lowercase shorthand used in filenames/URLs.</returns>
     public static string ToDisplayString(this DukascopyTimeframe timeframe) =>
         timeframe switch
         {
@@ -39,6 +72,7 @@ internal static class DukascopyTimeframeExtensions
             DukascopyTimeframe.Hour1 => "h1",
             DukascopyTimeframe.Hour4 => "h4",
             DukascopyTimeframe.Day1 => "d1",
+            DukascopyTimeframe.Week1 => "w1",
             DukascopyTimeframe.Month1 => "mn1",
             _ => timeframe.ToString()
         };
@@ -58,7 +92,8 @@ internal sealed record DownloadOptions(
     int MaxRetries,
     TimeSpan RetryDelay,
     TimeSpan RateLimitPause,
-    int RateLimitRetryLimit)
+    int RateLimitRetryLimit,
+    PriceSidePreference SidePreference = PriceSidePreference.Bid)
 {
     /// <summary>
     /// Returns a short human-readable description of the download request.

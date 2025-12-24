@@ -25,12 +25,12 @@ public class Bi5DecoderTests
     }
 
     [Fact]
-    public void ParseMinutes_DecodesRawRecords()
+    public void ParseCandles_DecodesRawRecords()
     {
         var start = new DateTimeOffset(2025, 1, 14, 0, 0, 0, TimeSpan.Zero);
         var stream = BuildMinuteStream((60, 120000, 125000, 118000, 123000, 10f));
 
-        var candles = Bi5Decoder.ParseMinutes(stream, start);
+        var candles = Bi5Decoder.ParseCandles(stream, start);
 
         var candle = Assert.Single(candles);
         Assert.Equal(start.AddMinutes(1), candle.TimestampUtc);

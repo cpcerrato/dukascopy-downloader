@@ -30,7 +30,7 @@ public class CacheManagerTests : IDisposable
 
         await manager.SyncToOutputAsync(cachePath, slice, CancellationToken.None);
 
-        var expected = Path.Combine(_output, "EURUSD", "2025", "m1", Path.GetFileName(cachePath));
+        var expected = Path.Combine(_output, "EURUSD", "2025", slice.CacheScope, Path.GetFileName(cachePath));
         Assert.True(File.Exists(expected));
         Assert.Equal("payload", await File.ReadAllTextAsync(expected));
     }

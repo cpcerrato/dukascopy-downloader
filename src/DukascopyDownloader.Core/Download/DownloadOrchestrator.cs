@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
@@ -19,6 +20,7 @@ internal sealed class DownloadOrchestrator
     private readonly HttpClient _httpClient;
     private readonly RateLimitGate _rateLimitGate = new();
     private long _lastProgressTick;
+    private readonly ConcurrentDictionary<int, string> _inflightSummaries = new();
 
     internal sealed record DownloadJob(DownloadSlice Slice, int Attempts, int RateLimitHits);
 
@@ -36,6 +38,12 @@ internal sealed class DownloadOrchestrator
         public static JobDecision Failed(Exception error) => new(JobDecisionKind.Failed, null, TimeSpan.Zero, error);
     }
 
+    /// <summary>
+    /// Creates a download orchestrator that manages planning, concurrent downloads, verification, and progress reporting.
+    /// </summary>
+    /// <param name="logger">Logger for informational/warning/error output.</param>
+    /// <param name="progress">Optional progress sink; <see cref="NullProgress{T}"/> used when null.</param>
+    /// <param name="httpHandler">Optional custom HTTP handler (useful for testing/mocking).</param>
     public DownloadOrchestrator(ILogger<DownloadOrchestrator> logger, IProgress<DownloadProgressSnapshot>? progress = null, HttpMessageHandler? httpHandler = null)
     {
         _logger = logger;
@@ -76,6 +84,18 @@ internal sealed class DownloadOrchestrator
         var cacheManager = new CacheManager(options.CacheRoot, options.OutputDirectory);
         var progress = new DownloadProgress();
         using var failureManifest = new FailureManifest(options.CacheRoot);
+
+        var precount = options.UseCache && !options.ForceRefresh
+            ? PrecountAndFilterCache(slices, options.CacheRoot)
+            : (CacheHits: 0, Pending: slices);
+
+        if (precount.CacheHits > 0)
+        {
+            progress.AddCacheHits(precount.CacheHits);
+            _logger.LogInformation("Precounted cache hits: {CacheHits} of {Total} slices.", precount.CacheHits, slices.Count);
+        }
+
+        var pendingSlices = precount.Pending;
         RenderProgress(slices.Count, progress, force: true);
         RenderProgress(slices.Count, progress);
 
@@ -86,12 +106,12 @@ internal sealed class DownloadOrchestrator
             AllowSynchronousContinuations = false
         });
 
-        foreach (var slice in slices)
+        foreach (var slice in pendingSlices)
         {
             channel.Writer.TryWrite(new DownloadJob(slice, Attempts: 0, RateLimitHits: 0));
         }
 
-        var remainingJobs = slices.Count;
+        var remainingJobs = pendingSlices.Count;
         void MarkJobCompleted()
         {
             if (Interlocked.Decrement(ref remainingJobs) == 0)
@@ -100,8 +120,40 @@ internal sealed class DownloadOrchestrator
             }
         }
 
+        if (pendingSlices.Count == 0)
+        {
+            RenderProgress(slices.Count, progress, force: true, isFinal: true);
+            _logger.LogInformation("Downloads completed. New: {New}, Cache hits: {Cache}, Missing: {Missing}, Failed: {Failed}.",
+                progress.SuccessCount, progress.CacheHits, progress.SkippedMissing, progress.Failures);
+            return new DownloadSummary(
+                Total: slices.Count,
+                NewFiles: progress.SuccessCount,
+                CacheHits: progress.CacheHits,
+                Missing: progress.SkippedMissing,
+                Failed: progress.Failures,
+                Duration: Stopwatch.StartNew().Elapsed);
+        }
+
+        using var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var heartbeat = Task.Run(async () =>
+        {
+            try
+            {
+                while (!heartbeatCts.Token.IsCancellationRequested)
+                {
+                    await Task.Delay(500, heartbeatCts.Token);
+                    RenderProgress(slices.Count, progress, force: true);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // normal shutdown
+            }
+        }, heartbeatCts.Token);
+
         var workers = Enumerable.Range(0, options.Concurrency)
-            .Select(_ => RunWorkerAsync(
+            .Select(workerId => RunWorkerAsync(
+                workerId,
                 channel.Reader,
                 channel.Writer,
                 slices.Count,
@@ -114,6 +166,8 @@ internal sealed class DownloadOrchestrator
             .ToArray();
 
         await Task.WhenAll(workers);
+        heartbeatCts.Cancel();
+        await heartbeat;
 
         RenderProgress(slices.Count, progress, force: true, isFinal: true);
         _logger.LogInformation("Downloads completed. New: {New}, Cache hits: {Cache}, Missing: {Missing}, Failed: {Failed}.",
@@ -135,6 +189,7 @@ internal sealed class DownloadOrchestrator
     }
 
     private async Task RunWorkerAsync(
+        int workerId,
         ChannelReader<DownloadJob> reader,
         ChannelWriter<DownloadJob> writer,
         int totalJobs,
@@ -149,25 +204,61 @@ internal sealed class DownloadOrchestrator
         {
             while (reader.TryRead(out var job))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                var decision = await ProcessJobAsync(job, options, cacheManager, progress, failureManifest, cancellationToken);
-
-                switch (decision.Kind)
+                var summary = job.Slice.Describe();
+                _inflightSummaries[workerId] = summary;
+                try
                 {
-                    case JobDecisionKind.Completed:
-                        markJobCompleted();
-                        RenderProgress(totalJobs, progress);
-                        break;
-                    case JobDecisionKind.Requeue:
-                        ScheduleRetry(decision.Job!, decision.Delay, writer, cancellationToken);
-                        break;
-                    case JobDecisionKind.Failed:
-                        markJobCompleted();
-                        writer.TryComplete(decision.Error);
-                        throw decision.Error!;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var decision = await ProcessJobAsync(job, options, cacheManager, progress, failureManifest, cancellationToken);
+
+                    switch (decision.Kind)
+                    {
+                        case JobDecisionKind.Completed:
+                            markJobCompleted();
+                            RenderProgress(totalJobs, progress);
+                            break;
+                        case JobDecisionKind.Requeue:
+                            ScheduleRetry(decision.Job!, decision.Delay, writer, cancellationToken);
+                            RenderProgress(totalJobs, progress, force: true);
+                            break;
+                        case JobDecisionKind.Failed:
+                            markJobCompleted();
+                            RenderProgress(totalJobs, progress, force: true);
+                            break;
+                    }
+                }
+                finally
+                {
+                    _inflightSummaries.TryRemove(workerId, out _);
                 }
             }
         }
+    }
+
+    private static (int CacheHits, List<DownloadSlice> Pending) PrecountAndFilterCache(IEnumerable<DownloadSlice> slices, string cacheRoot)
+    {
+        var count = 0;
+        var pending = new List<DownloadSlice>();
+        foreach (var slice in slices)
+        {
+            var path = CacheManagerPath(slice, cacheRoot);
+            if (File.Exists(path))
+            {
+                count++;
+            }
+            else
+            {
+                pending.Add(slice);
+            }
+        }
+
+        return (count, pending);
+    }
+
+    private static string CacheManagerPath(DownloadSlice slice, string cacheRoot)
+    {
+        var yearSegment = slice.Start.UtcDateTime.Year.ToString("D4", System.Globalization.CultureInfo.InvariantCulture);
+        return Path.Combine(cacheRoot, slice.Instrument, yearSegment, slice.CacheScope, slice.CacheFileName);
     }
 
     private void RenderProgress(int totalJobs, DownloadProgress progress, bool force = false, bool isFinal = false)
@@ -181,6 +272,9 @@ internal sealed class DownloadOrchestrator
         }
 
         _lastProgressTick = elapsedMs;
+        var inflight = _inflightSummaries.Count == 0
+            ? null
+            : _inflightSummaries.Values.ToArray();
         _progress.Report(new DownloadProgressSnapshot(
             totalJobs,
             completed,
@@ -188,8 +282,9 @@ internal sealed class DownloadOrchestrator
             progress.CacheHits,
             progress.SkippedMissing,
             progress.Failures,
-            null,
-            isFinal));
+            Stage: null,
+            IsFinal: isFinal,
+            InFlight: inflight));
     }
     internal async Task<JobDecision> ProcessJobAsync(
         DownloadJob job,
@@ -237,7 +332,7 @@ internal sealed class DownloadOrchestrator
                     return JobDecision.Failed(error);
                 }
 
-                 _logger.LogWarning($"Rate limit detected ({summary}). Attempt {nextRateLimitHits}/{options.RateLimitRetryLimit}. Pausing {options.RateLimitPause.TotalSeconds:F0}s.");
+                _logger.LogWarning($"Rate limit detected ({summary}). Attempt {nextRateLimitHits}/{options.RateLimitRetryLimit}. Pausing {options.RateLimitPause.TotalSeconds:F0}s.");
                 _rateLimitGate.Trigger(options.RateLimitPause, _logger);
                 var retryJob = job with { Attempts = attemptNumber, RateLimitHits = nextRateLimitHits };
                 return JobDecision.Requeue(retryJob, TimeSpan.Zero);
@@ -267,24 +362,30 @@ internal sealed class DownloadOrchestrator
             progress.IncrementSuccess();
             return JobDecision.Completed();
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
         catch (Exception ex)
         {
+            var isTimeout = ex is TaskCanceledException;
             if (attemptNumber >= maxAttempts)
             {
                 progress.IncrementFailure();
-                failureManifest.Record(summary, ex.Message);
-                var error = new DownloadException($"Unable to download {summary} after {maxAttempts} attempts.", ex);
+                failureManifest.Record(summary, isTimeout ? "timeout" : ex.Message);
+                var errorMessage = isTimeout
+                    ? $"Timeout downloading {summary} after {maxAttempts} attempts."
+                    : $"Unable to download {summary} after {maxAttempts} attempts.";
+                _logger.LogError(errorMessage);
+                var error = new DownloadException(errorMessage, ex);
                 return JobDecision.Failed(error);
             }
 
-             _logger.LogWarning($"Failure downloading {summary} (attempt {attemptNumber}/{maxAttempts}): {ex.Message}. Retrying in {options.RetryDelay.TotalSeconds:F0}s.");
-            var retryJob = job with { Attempts = attemptNumber };
-            return JobDecision.Requeue(retryJob, options.RetryDelay);
-        }
+                var failureKind = isTimeout ? "Timeout" : "Failure";
+                _logger.LogWarning($"{failureKind} downloading {summary} (attempt {attemptNumber}/{maxAttempts}): {ex.Message}. Retrying in {options.RetryDelay.TotalSeconds:F0}s.");
+                var retryJob = job with { Attempts = attemptNumber };
+                return JobDecision.Requeue(retryJob, options.RetryDelay);
+            }
         finally
         {
             if (File.Exists(tempPath))

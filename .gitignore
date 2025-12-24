@@ -75,3 +75,4 @@ temp/
 *.empty
 
 *scripts/benchmark.sh
+.dockerignore

@@ -7,6 +7,11 @@ internal sealed class CacheManager
     private readonly string _cacheRoot;
     private readonly string? _outputRoot;
 
+    /// <summary>
+    /// Creates a cache manager for resolving BI5 locations and mirroring verified files.
+    /// </summary>
+    /// <param name="cacheRoot">Root directory used to store BI5 files.</param>
+    /// <param name="outputRoot">Optional mirror directory; null/empty disables mirroring.</param>
     public CacheManager(string cacheRoot, string? outputRoot)
     {
         _cacheRoot = cacheRoot;

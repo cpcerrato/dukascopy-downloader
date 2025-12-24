@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.IO;
 using DukascopyDownloader.Core.Logging;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 
 namespace DukascopyDownloader.Cli.Logging;
@@ -15,6 +17,7 @@ internal sealed class ConsoleLogger : ILogger, IProgress<DownloadProgressSnapsho
     private readonly object _gate = new();
     private bool _progressActive;
     private int _progressWidth;
+    private int _progressLines;
     private int _spinnerIndex;
     private readonly char[] _spinner = new[] { '|', '/', '-', '\\' };
     private readonly LogLevel _minLevel;
@@ -50,19 +53,8 @@ internal sealed class ConsoleLogger : ILogger, IProgress<DownloadProgressSnapsho
     {
         lock (_gate)
         {
-            var message = FormatDownloadSnapshot(snapshot, NextSpinner());
-            var padded = PadAndClamp(message);
-            _progressActive = true;
-            var prev = Console.ForegroundColor;
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.Write("\r" + padded);
-            Console.ForegroundColor = prev;
-            if (snapshot.IsFinal)
-            {
-                Console.WriteLine();
-                _progressActive = false;
-                _progressWidth = 0;
-            }
+            var (main, mainColor, details) = FormatDownloadSnapshot(snapshot, NextSpinner());
+            RenderProgress(main, mainColor, details, snapshot.IsFinal);
         }
     }
 
@@ -70,19 +62,8 @@ internal sealed class ConsoleLogger : ILogger, IProgress<DownloadProgressSnapsho
     {
         lock (_gate)
         {
-            var message = FormatGenerationSnapshot(snapshot, NextSpinner());
-            var padded = PadAndClamp(message);
-            _progressActive = true;
-            var prev = Console.ForegroundColor;
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.Write("\r" + padded);
-            Console.ForegroundColor = prev;
-            if (snapshot.IsFinal)
-            {
-                Console.WriteLine();
-                _progressActive = false;
-                _progressWidth = 0;
-            }
+            var (main, mainColor, details) = FormatGenerationSnapshot(snapshot, NextSpinner());
+            RenderProgress(main, mainColor, details, snapshot.IsFinal);
         }
     }
 
@@ -106,12 +87,7 @@ internal sealed class ConsoleLogger : ILogger, IProgress<DownloadProgressSnapsho
     {
         lock (_gate)
         {
-            if (_progressActive)
-            {
-                Console.WriteLine();
-                _progressActive = false;
-                _progressWidth = 0;
-            }
+            ClearProgressBlock();
 
             var timestamp = DateTimeOffset.UtcNow.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
             var previousColor = Console.ForegroundColor;
@@ -122,34 +98,170 @@ internal sealed class ConsoleLogger : ILogger, IProgress<DownloadProgressSnapsho
         }
     }
 
-    private static string FormatDownloadSnapshot(DownloadProgressSnapshot snapshot, char spinner)
+    private void ClearProgressBlock()
+    {
+        if (!_progressActive)
+        {
+            return;
+        }
+
+        var prev = Console.ForegroundColor;
+        Console.ForegroundColor = ConsoleColor.Cyan;
+
+        Console.Write("\r");
+        if (_progressLines > 0)
+        {
+            Console.Write($"\u001b[{_progressLines - 1}F");
+        }
+
+        // Clear from cursor to end of screen to avoid leaving blank padding.
+        Console.Write("\u001b[J");
+
+        Console.ForegroundColor = prev;
+        _progressActive = false;
+        _progressWidth = 0;
+        _progressLines = 0;
+    }
+
+    private static (string Main, ConsoleColor MainColor, IReadOnlyList<(string Line, ConsoleColor Color)>? Details) FormatDownloadSnapshot(DownloadProgressSnapshot snapshot, char spinner)
     {
         var percent = snapshot.Total == 0 ? 100 : (int)Math.Round((double)snapshot.Completed * 100 / snapshot.Total);
         var stage = string.IsNullOrWhiteSpace(snapshot.Stage) ? "" : $" {snapshot.Stage}";
         var pending = Math.Max(0, snapshot.Total - snapshot.Completed);
         var counters = $"New {snapshot.New} | Cache {snapshot.Cache} | Missing {snapshot.Missing} | Failed {snapshot.Failed}";
+        var main = $"Downloads {spinner}{stage} {percent,3}% ({snapshot.Completed}/{snapshot.Total}, pending {pending}) | {counters}";
+        var mainColor = ConsoleColor.Green;
+        if (snapshot.InFlight is { Count: > 0 })
+        {
+            var detailLines = BuildInFlightLines(snapshot.InFlight, ConsoleColor.Blue);
+            return (main, mainColor, detailLines);
+        }
 
-        return $"Downloads {spinner} {percent,3}% ({snapshot.Completed}/{snapshot.Total}, pending {pending}) | {counters}";
+        return (main, mainColor, null);
     }
 
-    private static string FormatGenerationSnapshot(GenerationProgressSnapshot snapshot, char spinner)
+    private static (string Main, ConsoleColor MainColor, IReadOnlyList<(string Line, ConsoleColor Color)>? Details) FormatGenerationSnapshot(GenerationProgressSnapshot snapshot, char spinner)
     {
         var percent = snapshot.Total == 0 ? 100 : (int)Math.Round((double)snapshot.Completed * 100 / snapshot.Total);
         var stage = string.IsNullOrWhiteSpace(snapshot.Stage) ? "" : $" {snapshot.Stage}";
         var pending = Math.Max(0, snapshot.Total - snapshot.Completed);
-        return $"Generation {spinner}{stage}: {percent,3}% ({snapshot.Completed}/{snapshot.Total}, pending {pending})";
+        var main = $"Generation {spinner}{stage}: {percent,3}% ({snapshot.Completed}/{snapshot.Total}, pending {pending})";
+        return (main, ConsoleColor.Cyan, null);
     }
 
     private char NextSpinner() => _spinner[_spinnerIndex++ % _spinner.Length];
 
-    private string PadAndClamp(string message)
+    private static IReadOnlyList<(string Line, ConsoleColor Color)> BuildInFlightLines(IReadOnlyList<string> items, ConsoleColor color)
     {
-        var targetWidth = Math.Max(_progressWidth, message.Length);
-        var maxWidth = Console.BufferWidth > 0 ? Console.BufferWidth - 1 : targetWidth;
-        targetWidth = Math.Min(targetWidth, Math.Max(10, maxWidth));
-        _progressWidth = targetWidth;
-        return message.Length > targetWidth
-            ? message[..targetWidth]
-            : message.PadRight(targetWidth);
+        var parsed = new List<(string Symbol, string Tf, string Window)>(items.Count);
+        foreach (var item in items)
+        {
+            var dash = item.IndexOf('-');
+            var at = item.IndexOf('@');
+            if (dash > 0 && at > dash)
+            {
+                var symbol = item[..dash];
+                var tf = item[(dash + 1)..at];
+                var window = item[(at + 1)..];
+                parsed.Add((symbol, tf, window));
+            }
+            else
+            {
+                parsed.Add((item, string.Empty, string.Empty));
+            }
+        }
+
+        var wSymbol = parsed.Count == 0 ? 0 : parsed.Max(p => p.Symbol.Length);
+        var wTf = parsed.Count == 0 ? 0 : parsed.Max(p => p.Tf.Length);
+
+        var lines = new List<(string Line, ConsoleColor Color)>(parsed.Count + 1)
+        {
+            ("In-flight:", color)
+        };
+
+        foreach (var p in parsed)
+        {
+            var symbol = p.Symbol.PadRight(wSymbol);
+            var tf = p.Tf.PadRight(wTf);
+            var window = p.Window;
+            var line = $"  {symbol}  {tf}  {window}";
+            lines.Add((line.TrimEnd(), color));
+        }
+
+        return lines;
+    }
+
+    private void RenderProgress(string main, ConsoleColor mainColor, IReadOnlyList<(string Line, ConsoleColor Color)>? details, bool isFinal)
+    {
+        var maxDetail = details is { Count: > 0 } ? details.Max(l => l.Line.Length) : 0;
+        var desiredWidth = Math.Max(main.Length, maxDetail);
+        var consoleWidth = Console.BufferWidth > 0 ? Console.BufferWidth - 1 : desiredWidth;
+        _progressWidth = Math.Min(Math.Max(_progressWidth, desiredWidth), Math.Max(10, consoleWidth));
+
+        var lines = new List<(string Line, ConsoleColor Color)>
+        {
+            (Pad(main, _progressWidth), mainColor)
+        };
+        if (details is { Count: > 0 })
+        {
+            lines.AddRange(details.Select(d => (Pad(d.Line, _progressWidth), d.Color)));
+        }
+
+        while (lines.Count < _progressLines)
+        {
+            lines.Add((Pad(string.Empty, _progressWidth), mainColor));
+        }
+
+        var prev = Console.ForegroundColor;
+
+        if (_progressActive)
+        {
+            if (_progressLines > 0)
+            {
+                Console.Write($"\r\u001b[{_progressLines - 1}F");
+            }
+            else
+            {
+                Console.Write("\r");
+            }
+        }
+
+        for (var i = 0; i < lines.Count; i++)
+        {
+            if (i > 0)
+            {
+                Console.WriteLine();
+            }
+
+            Console.ForegroundColor = lines[i].Color;
+            Console.Write(lines[i].Line);
+        }
+
+        Console.ForegroundColor = prev;
+
+        if (isFinal)
+        {
+            Console.WriteLine();
+            _progressActive = false;
+            _progressWidth = 0;
+            _progressLines = 0;
+        }
+        else
+        {
+            _progressActive = true;
+            _progressLines = lines.Count;
+        }
+    }
+
+    private static string Pad(string message, int width)
+    {
+        if (width <= 0)
+        {
+            return message;
+        }
+
+        return message.Length > width
+            ? message[..width]
+            : message.PadRight(width);
     }
 }

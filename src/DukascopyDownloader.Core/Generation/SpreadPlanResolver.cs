@@ -28,11 +28,6 @@ internal static class SpreadPlanResolver
 
         if (generation.TickSize is not null)
         {
-            if (ticks.Count == 0 && timeframe != DukascopyTimeframe.Tick)
-            {
-                throw new InvalidOperationException("Tick data required to compute spread with --tick-size but no ticks are available in cache.");
-            }
-
             return SpreadPlan.FromTickSize(generation.TickSize.Value);
         }
 

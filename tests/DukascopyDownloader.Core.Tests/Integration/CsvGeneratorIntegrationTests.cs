@@ -292,8 +292,15 @@ public sealed class CsvGeneratorIntegrationTests : IDisposable
 
     private string ResolveMinuteCachePath(DateTimeOffset dayStart)
     {
-        var year = dayStart.UtcDateTime.Year.ToString("D4");
-        return Path.Combine(_cacheRoot, "EURUSD", year, "m1", $"{dayStart:yyyyMMdd}.m1.bi5");
+        var slice = new DownloadSlice(
+            "EURUSD",
+            dayStart,
+            dayStart.AddDays(1),
+            DukascopyTimeframe.Minute1,
+            DukascopyFeedKind.Minute,
+            DukascopyPriceSide.Bid);
+        var manager = new CacheManager(_cacheRoot, null);
+        return manager.ResolveCachePath(slice);
     }
 
     private void PopulateMinuteCache(DateTimeOffset dayStart)

@@ -11,6 +11,10 @@ internal sealed class FailureManifest : IDisposable
     private readonly ConcurrentBag<Entry> _entries = new();
     private bool _disposed;
 
+    /// <summary>
+    /// Creates a manifest that records download failures and writes them to a JSON file under the cache root.
+    /// </summary>
+    /// <param name="cacheRoot">Cache root where the manifest will be stored.</param>
     public FailureManifest(string cacheRoot)
     {
         _path = Path.Combine(cacheRoot, "download-failures.json");
@@ -20,11 +24,19 @@ internal sealed class FailureManifest : IDisposable
         }
     }
 
+    /// <summary>
+    /// Adds a failure entry to the manifest (not flushed until disposal).
+    /// </summary>
+    /// <param name="sliceSummary">Human-friendly slice descriptor.</param>
+    /// <param name="message">Failure reason.</param>
     public void Record(string sliceSummary, string message)
     {
         _entries.Add(new Entry(sliceSummary, message, DateTimeOffset.UtcNow));
     }
 
+    /// <summary>
+    /// Flushes pending entries to disk (or removes the manifest if empty).
+    /// </summary>
     public void Dispose()
     {
         if (_disposed)

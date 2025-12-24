@@ -4,6 +4,12 @@ namespace DukascopyDownloader.Download;
 
 internal static class Bi5Verifier
 {
+    /// <summary>
+    /// Validates a BI5 file by fully decoding its LZMA payload. Throws on corruption.
+    /// </summary>
+    /// <param name="path">Path to the BI5 file on disk.</param>
+    /// <param name="cancellationToken">Cancellation token for the verification task.</param>
+    /// <exception cref="InvalidDataException">Thrown when the BI5 header/payload is invalid.</exception>
     public static async Task VerifyAsync(string path, CancellationToken cancellationToken)
     {
         await Task.Run(() => Verify(path), cancellationToken);

@@ -50,11 +50,12 @@ internal sealed record GenerationOptions(
 internal sealed class GenerationOptionsFactory
 {
     /// <summary>
-    /// Builds validated generation options from raw CLI inputs (timezone, date format, spread/volume settings, templates).
+    /// Builds validated generation options from raw inputs (timezone, date format, spread/volume settings, templates).
     /// </summary>
     /// <param name="timeZoneValue">Timezone identifier (IANA/Windows); null for UTC.</param>
     /// <param name="formatValue">Custom date format; null to use defaults (UTC ms or template default).</param>
     /// <param name="template">Export template (e.g., MetaTrader5).</param>
+    /// <param name="includeHeaderOverride">Optional explicit header toggle; null uses the template default (on for none, off for MT5).</param>
     /// <param name="tickSize">Explicit tick size/point value for spread calculation.</param>
     /// <param name="spreadPoints">Fixed spread in points (fallback when no tick size).</param>
     /// <param name="inferTickSize">Whether to infer tick size from tick deltas.</param>
@@ -63,6 +64,7 @@ internal sealed class GenerationOptionsFactory
     /// <param name="includeSpread">Whether to append spread column for non-template exports.</param>
     /// <param name="includeVolume">Whether to include volume column for non-template exports.</param>
     /// <param name="fixedVolume">Optional fixed volume per candle.</param>
+    /// <param name="preferTicks">Whether to aggregate candles from tick data instead of Dukascopy M1 feed.</param>
     /// <param name="options">Output generation options when successful.</param>
     /// <param name="error">Error message when validation fails.</param>
     /// <returns>True when options are valid; otherwise false with an error message.</returns>
@@ -70,6 +72,7 @@ internal sealed class GenerationOptionsFactory
         string? timeZoneValue,
         string? formatValue,
         ExportTemplate template,
+        bool? includeHeaderOverride,
         decimal? tickSize,
         int? spreadPoints,
         bool inferTickSize,
@@ -104,15 +107,21 @@ internal sealed class GenerationOptionsFactory
             dateFormat = formatValue!.Trim();
         }
 
-        var includeHeader = true;
+        var includeHeader = includeHeaderOverride ?? true;
         var includeSpreadFlag = includeSpread;
         var includeVolumeFlag = includeVolume;
+        var spreadPointsValue = spreadPoints;
         if (template == ExportTemplate.MetaTrader5)
         {
-            includeHeader = false;
+            includeHeader = includeHeaderOverride ?? false;
             dateFormat ??= "yyyy.MM.dd HH:mm:ss.fff";
             includeSpreadFlag = true;
             includeVolumeFlag = true; // MT5 requires volumes
+            if (!tickSize.HasValue && !spreadPointsValue.HasValue && !inferTickSize)
+            {
+                // Default MT5 spread to 0 points when nothing is specified to avoid hard failures.
+                spreadPointsValue = 0;
+            }
         }
 
         options = new GenerationOptions(
@@ -121,7 +130,7 @@ internal sealed class GenerationOptionsFactory
             includeHeader,
             template,
             tickSize,
-            spreadPoints,
+            spreadPointsValue,
             inferTickSize,
             minNonZeroDeltas,
             spreadAggregation,

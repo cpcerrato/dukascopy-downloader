@@ -1,61 +1,97 @@
 # DukascopyDownloader CLI
 
-Command-line tool that wraps the core library to download, verify, cache, and export Dukascopy data.
+Command-line tool that downloads, verifies, caches, and exports Dukascopy data. All downloads are LZMA-verified before landing in the cache, and CSV exports can be built from either Dukascopy bars or tick-level aggregation. **Beta status:** the project is currently in beta; flags and defaults may still evolve. Prerelease builds carry a `-beta` suffix—use `INCLUDE_PRERELEASE=true` with the installer if you want the latest beta.
 
 ## Install
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cpcerrato/dukascopy-downloader/refs/heads/main/scripts/install.sh | sudo bash
 ```
+Use `INCLUDE_PRERELEASE=true` for prereleases (recommended while in beta), or set `VERSION=vX.Y.Z` to pin a build. Windows users can run the PowerShell installer: `irm https://raw.githubusercontent.com/cpcerrato/dukascopy-downloader/refs/heads/main/scripts/install.ps1 | iex`.
 
-For prereleases:
+## CLI options
 
-```bash
-INCLUDE_PRERELEASE=true curl -fsSL https://raw.githubusercontent.com/cpcerrato/dukascopy-downloader/refs/heads/main/scripts/install.sh | sudo bash
-```
+**Download**
+- `-i, --instrument <symbol>` – e.g., `EURUSD`.
+- `--from <YYYY-MM-DD>` / `--to <YYYY-MM-DD>` – inclusive UTC dates.
+- `--timeframe <tick|s1|m1|m5|m15|m30|h1|h4|d1|w1|mn1>` – default `tick`.
+- `--side <bid|ask|both>` – price side to download (default `bid`). When spread output is requested, both sides are fetched automatically.
+- `--cache-root <path>` – cache root (default `./.dukascopy-downloader-cache`).
+- `-o, --output <path>` – CSV destination; BI5 files always live under the cache.
+- `--download-only` – skip CSV generation (updates cache only).
+- `-c, --concurrency <n>` – parallel downloads (default: cores − 1).
+- `--max-retries <n>` / `--retry-delay <duration>` – retry policy per file.
+- `--rate-limit-pause <duration>` / `--rate-limit-retries <n>` – throttle handling.
+- `--force` – ignore cache hits; re-download everything.
+- `--no-cache` – do not read from cache (still writes to cache/output).
+- `--include-inactive` – fill inactive periods with flat candles (during generation).
 
-## Usage
+**Generation / CSV**
+- `--timezone <tz>` – timestamp timezone for CSV output (default UTC).
+- `--date-format <fmt>` – timestamp format (default Unix ms, or MT5 default when templated).
+- `--export-template <none|mt5>` – preset formatting; `mt5` removes headers, uses `yyyy.MM.dd HH:mm:ss.fff`, and sparsifies ticks.
+- `--header <true|false>` – force header on/off; overrides template default (on for none, off for mt5).
+- `--prefer-ticks` – build bars from tick data (downloads ticks if missing). Without this flag, bars are taken from Dukascopy native feeds (m1/h1/d1) with a fallback to lower feeds when a slice is missing.
+- `--include-spread` / `--spread-points <int>` – append spread column or force a fixed spread (points). MT5 template enables spread automatically. Spreads are computed from ticks when `--prefer-ticks` (warning emitted). If you set a fixed spread (e.g., `--spread-points 0`), it won’t fall back to lower feeds.
+- `--tick-size` / `--point <decimal>` – explicit tick size to compute spread points.
+- `--infer-tick-size` – infer tick size from tick deltas (requires ticks); `--min-nonzero-deltas <n>` controls the minimum deltas (default 100).
+- `--spread-agg <median|min|mean|last>` – aggregation for per-candle spread (default `median`).
+- `--include-volume` / `--no-volume` – keep or drop volume columns (non-MT5). MT5 always includes tickVolume and sets real volume to 0.
+- `--fixed-volume <int>` – override per-candle volume/tickVolume with a constant value.
 
-Common example:
+**General**
+- `--verbose` – verbose logging.
+- `--version` – print CLI version and exit.
+- `-h, --help` – show help.
 
-```bash
-dukascopy-downloader \
-  --instrument EURUSD \
-  --from 2024-01-01 --to 2024-01-08 \
-  --timeframe tick \
-  --export-template mt5 \
-  --infer-tick-size \
-  --timezone "America/New_York" \
-  --output ./exports
-```
+### Export templates
 
-Run `dukascopy-downloader --help` for the full list of options.
+`mt5` produces CSVs with no header:
+- **Ticks**: `timestamp,bid,ask,last,volume`  
+  - `timestamp`: `yyyy.MM.dd HH:mm:ss.fff` in the selected timezone.  
+  - `bid/ask`: top-of-book quotes, written only when they change vs. previous tick. If only `bidVolume`/`askVolume` change but prices stay the same, **no** row is added: the export captures each price change, not every volume “heartbeat”.  
+  - `last` and `volume`: empty for FX/CFDs (no trade print / real volume). Rows where both bid/ask match the previous tick are skipped.
+- **Candles**: `timestamp,open,high,low,close,tickVolume,volume,spread`  
+  - OHLC on bid prices; `tickVolume` = tick count in the candle (or `--fixed-volume`).  
+  - `volume` is always `0` for FX/CFDs.  
+  - `spread` in MT5 points, using tick size precedence: `--tick-size/--point` → `--infer-tick-size` (if enough deltas) → `--spread-points` → error.
+- Recommended: import tick CSV into an MT5 custom symbol (`Every tick based on real ticks`). Bars can be regenerated by MT5, but `--prefer-ticks` will build them from your tick cache if you want consistency before import.
 
-## Quick recipes
+### Feeds and sides
+
+- m1/h1/d1 BI5 feeds are downloaded directly; h4 aggregates from h1, w1/mn1 aggregate from d1.
+- If a native slice is missing (e.g., h1/d1 not cached), generation falls back to the next lower feed (h1→m1, d1→h1→m1).
+- When `--side both` is used, one CSV is emitted per side with a `_bid`/`_ask` suffix. The default (`bid`) writes a single CSV.
+
+## Examples
 
 **Plain CSV ticks (UTC ms, headers)**
 ```bash
 dukascopy-downloader --instrument EURUSD --from 2024-01-01 --to 2024-01-08 --timeframe tick --output ./exports
 ```
 
-**MT5 ticks (sparse bid/ask, NY timezone, inferred tick size)**
+**MT5 ticks (sparse, NY timezone, inferred tick size)**
 ```bash
 dukascopy-downloader --instrument EURUSD --from 2024-01-01 --to 2024-01-08 \
   --timeframe tick --export-template mt5 --infer-tick-size \
-  --timezone "America/New_York" --output ./mt5-ticks
+  --timezone America/New_York --output ./mt5-ticks
 ```
 
-**MT5 m1 candles (fixed spread when ticks unavailable)**
+**MT5 m1 bars built from ticks (spread from tick deltas)**
 ```bash
 dukascopy-downloader --instrument EURUSD --from 2024-01-01 --to 2024-01-08 \
-  --timeframe m1 --export-template mt5 --spread-points 10 --timezone "America/New_York" \
-  --output ./mt5-bars
+  --timeframe m1 --export-template mt5 --prefer-ticks --infer-tick-size \
+  --timezone America/New_York --output ./mt5-bars
 ```
-Tip: add `--prefer-ticks` to build bars from tick data (downloads ticks if they aren’t cached), enabling tick-based spread and tickVolume calculations.
+
+**Fixed-spread bars when ticks are unavailable**
+```bash
+dukascopy-downloader --instrument EURUSD --from 2024-01-01 --to 2024-01-08 \
+  --timeframe h1 --export-template mt5 --spread-points 10 \
+  --timezone UTC --output ./mt5-bars
+```
 
 ## Tests
-
-CLI tests live under `tests/DukascopyDownloader.Cli.Tests`. Run them with:
 
 ```bash
 dotnet test tests/DukascopyDownloader.Cli.Tests/DukascopyDownloader.Cli.Tests.csproj
