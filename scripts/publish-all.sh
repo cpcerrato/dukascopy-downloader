@@ -9,7 +9,7 @@ IFS=' ' read -r -a RID_LIST <<< "${RIDS:-linux-x64 linux-arm64 osx-arm64 win-x64
 # Determine version from env or project file
 VERSION="${VERSION:-}"
 if [[ -z "$VERSION" ]]; then
-  VERSION=$(grep -m1 -oE '<Version>[^<]+' "$ROOT/dukascopy-downloader.csproj" | sed 's/<Version>//') || true
+  VERSION=$(grep -m1 -oE '<Version>[^<]+' "$ROOT/src/DukascopyDownloader.Cli/DukascopyDownloader.Cli.csproj" | sed 's/<Version>//') || true
 fi
 VERSION=${VERSION:-dev}
 
@@ -18,13 +18,13 @@ mkdir -p "$ARTIFACTS_DIR"
 
 for rid in "${RID_LIST[@]}"; do
   echo "==> Publishing $rid (version $VERSION)"
-  dotnet publish "$ROOT/dukascopy-downloader.csproj" \
+  dotnet publish "$ROOT/src/DukascopyDownloader.Cli/DukascopyDownloader.Cli.csproj" \
     -c "$CONFIG" \
     -r "$rid" \
     --self-contained true \
     /p:DebugType=none
 
-  publish_dir="$ROOT/bin/$CONFIG/net9.0/$rid/publish"
+  publish_dir="$ROOT/src/DukascopyDownloader.Cli/bin/$CONFIG/net9.0/$rid/publish"
   stage_dir="$ARTIFACTS_DIR/stage-$rid"
   mkdir -p "$stage_dir"
 
